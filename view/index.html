@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fly reflex teleop</title>
+<style>
+  :root {
+    --page: #f4f3f0; --surface: #fcfcfb; --line: #dddbd5;
+    --text: #0b0b0b; --text-2: #52514e;
+    --operator: #2a78d6; --escape: #eb6834; --groom: #1baf7a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page: #111110; --surface: #1a1a19; --line: #383835;
+      --text: #f0efec; --text-2: #c3c2b7;
+      --operator: #3987e5; --escape: #d95926; --groom: #199e70;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 20px 16px 32px; background: var(--page); color: var(--text);
+         font: 15px/1.45 system-ui, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; display: grid; gap: 14px; }
+  h1 { font-size: 18px; margin: 0; }
+  h2 { font-size: 13px; font-weight: 600; color: var(--text-2); margin: 0 0 8px; }
+  .top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .status { color: var(--text-2); font-size: 13px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .row { display: grid; gap: 14px; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); }
+  @media (max-width: 760px) { .row { grid-template-columns: 1fr; } }
+  .control { display: flex; align-items: center; gap: 14px; }
+  .dot { width: 22px; height: 22px; border-radius: 50%; background: var(--operator); flex: none; }
+  .who { font-size: 34px; font-weight: 700; line-height: 1.1; }
+  .why { color: var(--text-2); margin-top: 6px; min-height: 1.45em; }
+  .meter { height: 8px; background: var(--line); border-radius: 4px; margin-top: 12px; overflow: hidden; }
+  .meter > div { height: 100%; width: 0; background: var(--operator); border-radius: 4px; }
+  .meter-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-2); margin-top: 4px; }
+  .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; }
+  .tile b { display: block; font-size: 24px; font-variant-numeric: tabular-nums; }
+  .tile span { font-size: 12px; color: var(--text-2); }
+  .legend { display: flex; gap: 16px; font-size: 13px; color: var(--text-2); flex-wrap: wrap; margin-bottom: 4px; }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .chart { position: relative; }
+  svg { display: block; width: 100%; height: auto; }
+  .grid { stroke: var(--line); stroke-width: 1; }
+  .axis { fill: var(--text-2); font-size: 11px; }
+  .series { fill: none; stroke-width: 2; stroke-linejoin: round; }
+  .tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--line);
+         border-radius: 6px; padding: 6px 9px; font-size: 12px; display: none; white-space: nowrap; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  td { padding: 3px 0; border-top: 1px solid var(--line); }
+  td:first-child { width: 70px; color: var(--text-2); }
+  td i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 7px; }
+  #scene { display: block; width: 100%; height: 480px; border: 0; border-radius: 6px; background: #16181d; }
+  .actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+  .actions span { color: var(--text-2); font-size: 13px; }
+  button { font: inherit; font-weight: 600; padding: 7px 14px; border-radius: 8px; cursor: pointer;
+           color: var(--text); background: var(--page); border: 1px solid var(--line); }
+  button:hover { border-color: var(--text-2); }
+  button:active { background: var(--line); }
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <h1>Fly reflex teleop</h1>
+    <div class="status" id="status">connecting…</div>
+  </div>
+
+  <div class="card" id="sceneCard">
+    <h2>The arm</h2>
+    <iframe id="scene" title="3D view of the arm" credentialless allow="cross-origin-isolated"></iframe>
+    <div class="actions">
+      <button id="throwGripper">Throw at gripper</button>
+      <button id="throwForearm">Throw at forearm</button>
+      <span id="throwNote">or press T / F</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <h2>In control now</h2>
+      <div class="control"><div class="dot" id="dot"></div><div class="who" id="who">Operator</div></div>
+      <div class="why" id="why">Waiting for data.</div>
+      <div class="meter"><div id="gain"></div></div>
+      <div class="meter-label"><span>Operator steers</span><span id="gainText">reflex override 0%</span><span>Reflex steers</span></div>
+    </div>
+    <div class="card">
+      <h2>What the arm senses</h2>
+      <div class="tiles">
+        <div class="tile"><b id="ttc">–</b><span>seconds to impact</span></div>
+        <div class="tile"><b id="miss">–</b><span>cm from the gripper at closest</span></div>
+        <div class="tile"><b id="force">0.0</b><span>newtons of touch on the arm</span></div>
+        <div class="tile"><b id="score">0 / 0</b><span>throws that touched the arm</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Reflex drive over the last 15 seconds (a reflex fires when its drive reaches 1)</h2>
+    <div class="legend">
+      <span><i style="background:var(--escape)"></i>Escape drive</span>
+      <span><i style="background:var(--groom)"></i>Groom drive</span>
+      <span>Strip along the top: who was in control</span>
+    </div>
+    <div class="chart" id="chart">
+      <svg id="svg" viewBox="0 0 1000 260" role="img" aria-label="Escape and groom drive over time">
+        <g id="strip"></g>
+        <g id="gridlines"></g>
+        <polyline id="lineGroom" class="series" stroke="var(--groom)"/>
+        <polyline id="lineEscape" class="series" stroke="var(--escape)"/>
+        <text id="labelEscape" class="axis" text-anchor="start"></text>
+        <text id="labelGroom" class="axis" text-anchor="start"></text>
+        <line id="cross" class="grid" y1="34" y2="230" style="display:none;stroke:var(--text-2)"/>
+      </svg>
+      <div class="tip" id="tip"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Changes of control</h2>
+    <table id="log"><tbody></tbody></table>
+  </div>
+</main>
+
+<script>
+const WINDOW = 15, X0 = 40, X1 = 930, Y0 = 34, Y1 = 230, TOP = 2;   // seconds; plot box; drive axis max
+const NAMES = { operator: "Operator", escape: "Escape reflex", groom: "Grooming reflex" };
+const $ = id => document.getElementById(id);
+const samples = [];
+let lastControl = null, hoverX = null;
+
+const x = (t, now) => X1 - (now - t) / WINDOW * (X1 - X0);
+const y = v => Y1 - Math.min(v, TOP) / TOP * (Y1 - Y0);
+
+function why(s) {
+  if (s.control === "escape") return "Something was about to hit the gripper, so the arm stepped out of its path.";
+  if (s.control === "groom") return "Something touched the arm, so it is shaking it off.";
+  if (s.ttc !== null) return `An object is ${s.ttc.toFixed(2)} s away and will pass ${(s.miss * 100).toFixed(0)} cm from the gripper.`;
+  return "Nothing is approaching. The arm follows the operator's hand.";
+}
+
+function draw() {
+  if (!samples.length) return;
+  const s = samples[samples.length - 1], now = s.t;
+  while (samples.length && samples[0].t < now - WINDOW) samples.shift();
+
+  $("dot").style.background = `var(--${s.control})`;
+  $("who").textContent = NAMES[s.control];
+  $("why").textContent = why(s);
+  $("gain").style.width = (s.gain * 100).toFixed(0) + "%";
+  $("gain").style.background = `var(--${s.control})`;
+  $("gainText").textContent = `reflex override ${(s.gain * 100).toFixed(0)}%`;
+  $("ttc").textContent = s.ttc === null ? "–" : s.ttc.toFixed(2);
+  $("miss").textContent = s.ttc === null ? "–" : (s.miss * 100).toFixed(0);
+  $("force").textContent = s.force.toFixed(1);
+  $("score").textContent = `${s.hits} / ${s.throws}`;
+
+  const pts = k => samples.map(p => `${x(p.t, now).toFixed(1)},${y(p.drive[k] || 0).toFixed(1)}`).join(" ");
+  $("lineEscape").setAttribute("points", pts("escape"));
+  $("lineGroom").setAttribute("points", pts("groom"));
+  const ye = y(s.drive.escape || 0), yg = y(s.drive.groom || 0);
+  const apart = Math.abs(ye - yg) < 13 ? 13 : 0;          // keep the two end labels from overlapping
+  place("labelEscape", "Escape", ye - (apart && ye <= yg ? apart / 2 : 0) + (apart && ye > yg ? apart / 2 : 0));
+  place("labelGroom", "Groom", yg + (apart && ye <= yg ? apart / 2 : 0) - (apart && ye > yg ? apart / 2 : 0));
+
+  let strip = "";
+  for (let i = 0; i < samples.length - 1; i++) {
+    const a = x(samples[i].t, now), b = x(samples[i + 1].t, now);
+    strip += `<rect x="${a.toFixed(1)}" y="12" width="${Math.max(b - a + 0.5, 0.5).toFixed(1)}" height="10" fill="var(--${samples[i].control})"/>`;
+  }
+  $("strip").innerHTML = strip;
+  if (hoverX !== null) showTip();
+}
+
+function place(id, text, yy) {
+  const el = $(id); el.textContent = text; el.setAttribute("x", X1 + 8); el.setAttribute("y", yy + 4);
+}
+
+function gridlines() {
+  let g = "";
+  for (const v of [0, 1, 2]) {
+    g += `<line class="grid" x1="${X0}" x2="${X1}" y1="${y(v)}" y2="${y(v)}" ${v === 1 ? 'stroke-dasharray="5 4" style="stroke:var(--text-2)"' : ""}/>`;
+    g += `<text class="axis" x="${X0 - 8}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+  }
+  g += `<text class="axis" x="${X0 + 6}" y="${y(1) - 6}">fires at 1</text>`;
+  for (let k = 0; k <= WINDOW; k += 5)
+    g += `<text class="axis" x="${X1 - k / WINDOW * (X1 - X0)}" y="250" text-anchor="middle">${k ? k + " s ago" : "now"}</text>`;
+  $("gridlines").innerHTML = g;
+}
+
+function showTip() {
+  const now = samples[samples.length - 1].t;
+  let best = null, gap = Infinity;
+  for (const p of samples) { const d = Math.abs(x(p.t, now) - hoverX); if (d < gap) { gap = d; best = p; } }
+  if (!best) return;
+  const px = x(best.t, now), box = $("svg").getBoundingClientRect(), k = box.width / 1000;
+  $("cross").style.display = ""; $("cross").setAttribute("x1", px); $("cross").setAttribute("x2", px);
+  const tip = $("tip");
+  tip.style.display = "block";
+  tip.innerHTML = `<b>${(now - best.t).toFixed(1)} s ago</b><br>Escape drive ${(best.drive.escape || 0).toFixed(2)}<br>Groom drive ${(best.drive.groom || 0).toFixed(2)}<br>In control: ${NAMES[best.control]}`;
+  tip.style.left = Math.min(px * k + 12, box.width - tip.offsetWidth - 4) + "px";
+  tip.style.top = (40 * k) + "px";
+}
+
+$("chart").addEventListener("mousemove", e => {
+  const box = $("svg").getBoundingClientRect();
+  hoverX = Math.max(X0, Math.min(X1, (e.clientX - box.left) / box.width * 1000));
+  if (samples.length) showTip();
+});
+$("chart").addEventListener("mouseleave", () => { hoverX = null; $("tip").style.display = "none"; $("cross").style.display = "none"; });
+
+function logChange(s) {
+  const row = document.createElement("tr");
+  row.innerHTML = `<td>${s.t.toFixed(1)} s</td><td><i style="background:var(--${s.control})"></i>${NAMES[s.control]} took control</td>`;
+  const body = $("log").tBodies[0];
+  body.prepend(row);
+  while (body.rows.length > 8) body.deleteRow(-1);
+}
+
+const VIEWER_PORT = __VIEWER_PORT__;   // filled in by the server; 0 when no 3D viewer is running
+if (VIEWER_PORT) $("scene").src = `http://${location.hostname}:${VIEWER_PORT}/`;
+else $("sceneCard").style.display = "none";
+
+function throwBall(aim) {
+  fetch(`/throw?aim=${aim}`, { method: "POST" })
+    .then(r => { $("throwNote").textContent = r.ok ? "or press T / F" : "throw was refused"; })
+    .catch(() => { $("throwNote").textContent = "throw not sent: the teleop program is not running"; });
+}
+$("throwGripper").addEventListener("click", () => throwBall("gripper"));
+$("throwForearm").addEventListener("click", () => throwBall("forearm"));
+addEventListener("keydown", e => {
+  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === "t" || e.key === "T") throwBall("gripper");
+  else if (e.key === "f" || e.key === "F") throwBall("forearm");
+});
+
+gridlines();
+const stream = new EventSource("/events");
+stream.onopen = () => $("status").textContent = "live";
+stream.onerror = () => $("status").textContent = "disconnected, retrying…";
+stream.onmessage = e => {
+  const s = JSON.parse(e.data);
+  if (samples.length && s.t < samples[samples.length - 1].t) { samples.length = 0; lastControl = null; }  // sim restarted
+  samples.push(s);
+  if (s.control !== lastControl) { if (lastControl !== null) logChange(s); lastControl = s.control; }
+};
+(function frame() { draw(); requestAnimationFrame(frame); })();
+</script>
+</body>
+</html>
