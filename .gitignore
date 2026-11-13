@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+data/
+checkpoints/
+*.pt
+*.npy
+*.npz
+runs/
+.DS_Store
