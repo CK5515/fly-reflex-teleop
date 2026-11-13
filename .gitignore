@@ -9,3 +9,5 @@ checkpoints/
 *.npz
 runs/
 .DS_Store
+third_party/
+persisted_settings.json
