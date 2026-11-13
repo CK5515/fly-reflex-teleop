@@ -4,7 +4,7 @@ import mujoco
 import numpy as np
 
 from reflex.interface import SceneEvents
-from sim.scene import BALL_RADIUS
+from sim.scene import BALL_RADIUS, TRAY_HALF, control_site
 
 GRAVITY = np.array([0.0, 0.0, -9.81])
 
@@ -22,13 +22,32 @@ class Senses:
         self.arm_root = model.body_rootid[self.hand]
         self._force = np.zeros(6)
         self._vel = np.zeros(6)
+        self.carrying = control_site(model) == "tray"
+        if self.carrying:
+            self.site = model.site("tray").id       # everything is sensed relative to the tray's centre
+            self.load_body = model.body("load").id
+            self.load_qvel = model.jnt_dofadr[model.body("load").jntadr[0]]
+        self._last_vel = np.zeros(3)
+        self._acc = np.zeros(3)
 
     def read(self, data: mujoco.MjData) -> SceneEvents:
         m = self.model
         mujoco.mj_objectVelocity(m, data, mujoco.mjtObj.mjOBJ_SITE, self.site, self._vel, 0)
         hand_vel = self._vel[3:].copy()
         ball_vel = data.qvel[self.ball_qvel:self.ball_qvel + 3]
+        # Acceleration by differencing velocity, smoothed over about 20 ms.
+        raw = (hand_vel - self._last_vel) / m.opt.timestep
+        self._acc += 0.1 * (raw - self._acc)
+        self._last_vel = hand_vel
+        load = {}
+        if self.carrying:
+            offset = data.xpos[self.load_body] - data.site_xpos[self.site]
+            on = bool(np.abs(offset[:2]).max() < TRAY_HALF + 0.01 and abs(offset[2]) < 0.06)
+            load = dict(load_on=on, load_pos=offset[:2].copy(),
+                        load_vel=(data.qvel[self.load_qvel:self.load_qvel + 3] - hand_vel)[:2].copy())
         return SceneEvents(
+            gripper_acc=self._acc.copy(),
+            **load,
             t=data.time,
             gripper_pos=data.site_xpos[self.site].copy(),
             object_pos=data.xpos[self.ball_body] - data.site_xpos[self.site],

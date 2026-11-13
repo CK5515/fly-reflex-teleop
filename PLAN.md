@@ -53,3 +53,24 @@ model replaces it behind the same interface only if it passes the Saturday 22:00
 - Glove time is shared. Record clips the first time a glove is on, and develop against the replay.
 - The brain model is the part most likely to slip. Verda credits (EUR 200) buy parallel runs, not writing time.
 - The earlier research repo must stay closed while the model is written.
+
+## Status, Friday night
+
+Done ahead of schedule (all in simulation; nothing has been tried with a physical glove):
+
+- Arm follows a hand pose from a script, the mouse, the SDK's emulated glove, or Rokoko's recorded two-glove sessions
+  (`data/rokoko_factory_sim/*.rkkrdd`, played with `rokoko-sdk --playback`).
+- Thrown ball, touch sensing, hand-written escape and grooming reflexes, live view (`--view`).
+- Fly-brain reflex (`--reflex brain`): a 1,340-neuron circuit cut from FlyWire, four neurotransmitter relations, band
+  experts with a learned router, trained on the Verda instance. The spectral bases must be copied from the machine
+  that trained the model (`data/brain/<circuit>/`): recomputing them elsewhere flips eigenvector signs.
+
+Open, in priority order:
+
+1. Calibrate glove axes to the simulation and limit the target to the arm's workspace (recorded hand drives the
+   target into the table at present).
+2. Glove time: record our own clips, check Coil Pro position, tune pinch thresholds.
+3. Show the brain's sensors, decision and experts in the live view.
+4. Brain claims: the classification task is too easy to tell real wiring from rewired wiring (all reach ~100%).
+   Needs a harder test before any claim that the wiring matters. The simulated rates are also very low.
+5. Backup demo video, then pitch video and README.
