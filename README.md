@@ -7,4 +7,3 @@ as a reflex layer: events in the scene (an object approaching fast, contact) bec
 mixture-of-experts model of the Drosophila brain, and the experts it routes to (escape, grooming) override the
 operator with a reflex. A live view shows which expert fired and why the arm moved.
 
-All code in this repository was written during the event.
