@@ -20,6 +20,10 @@ class SceneEvents:
     object_vel: np.ndarray   # its velocity minus the gripper's, m/s
     object_radius: float
     contact_force: float     # newtons pressing on the arm from the thrown object (0 = none)
+    gripper_acc: np.ndarray = field(default_factory=lambda: np.zeros(3))  # the gripper's acceleration, m/s^2
+    load_on: bool = False    # something loose is being carried and is still on the tray
+    load_pos: np.ndarray = field(default_factory=lambda: np.zeros(2))  # its offset from the tray's centre (x, y), metres
+    load_vel: np.ndarray = field(default_factory=lambda: np.zeros(2))  # its velocity over the tray, m/s
 
 
 @dataclass
@@ -28,12 +32,21 @@ class ReflexCommand:
 
     The arm goes to: operator's target + gain * offset. gain 0 = operator in
     full control. `activations` is every expert's drive, for the live view.
+
+    Steadying a carried load is continuous, not all-or-nothing: `level` asks
+    for the gripper to be held level whatever the operator's wrist does, and
+    `tilt` then leans it (radians about the world x and y axes) to keep the
+    load in place.
     """
 
     expert: str | None = None
     gain: float = 0.0
     offset: np.ndarray = field(default_factory=lambda: np.zeros(3))
     activations: dict[str, float] = field(default_factory=dict)
+    level: bool = False
+    planned_acc: np.ndarray = field(default_factory=lambda: np.zeros(3))  # acceleration the reflex is about to cause
+    tilt: np.ndarray = field(default_factory=lambda: np.zeros(2))
+    detail: dict = field(default_factory=dict)  # anything extra the live view may show (e.g. which experts)
 
 
 class Reflex(Protocol):

@@ -33,6 +33,12 @@ class SpectralBasis(nn.Module):
     def band(self, r: int) -> torch.Tensor:
         return getattr(self, f"band_{r}")
 
+    def slices(self, r: int) -> list[tuple[int, int]]:
+        """(first mode, one past the last mode) of each band."""
+        k = self.modes(r).shape[1]
+        edges = [-(-band * k // self.n_bands) for band in range(self.n_bands + 1)]  # ceil(band * k / n_bands)
+        return list(zip(edges[:-1], edges[1:]))
+
 
 class BandExpertLayer(nn.Module):
     def __init__(self, basis: SpectralBasis, d_in: int, d_out: int, n_shared: int = 2, router_modes: int = 16):
@@ -73,11 +79,14 @@ class BandExpertLayer(nn.Module):
 
         matrices = torch.einsum("es,sio->eio", self.mix, self.shared)        # [experts, d_in, d_out]
         out = self.own(h)
+        n_experts = gates.shape[1]
         for r in range(b.n_relations):
-            expert = r * b.n_bands + b.band(r)                               # which expert owns each mode
-            z = torch.einsum("bki,kio->bko", coeffs[r], matrices[expert])
-            z = z * gates[:, expert].unsqueeze(-1) * gates.shape[1]          # gate 1/experts = neutral
-            out = out + torch.einsum("nk,bko->bno", b.modes(r), z)
+            mixed = []
+            for band, (start, stop) in enumerate(b.slices(r)):               # a band is a run of neighbouring modes
+                e = r * b.n_bands + band
+                scale = gates[:, e, None, None] * n_experts                  # gate of 1/experts = neutral
+                mixed.append(coeffs[r][:, start:stop] @ matrices[e] * scale)
+            out = out + torch.einsum("nk,bko->bno", b.modes(r), torch.cat(mixed, dim=1))
         out = self.act(self.norm(out))
         return (out + h if self.residual else out), gates
 

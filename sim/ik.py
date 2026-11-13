@@ -3,7 +3,7 @@
 import mujoco
 import numpy as np
 
-from sim.scene import HOME_ARM
+from sim.scene import HOME_ARM, control_site
 
 ARM_DOFS = 7
 
@@ -18,7 +18,7 @@ class ArmIK:
     def __init__(self, model: mujoco.MjModel, damping: float = 0.05, max_step: float = 0.02):
         self.model = model
         self.scratch = mujoco.MjData(model)
-        self.site = model.site("grasp").id
+        self.site = model.site(control_site(model)).id
         self.damping = damping
         self.max_step = max_step  # radians per call, per joint
         self.q = HOME_ARM.copy()

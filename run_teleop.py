@@ -24,8 +24,8 @@ from reflex.handwritten import HandwrittenReflex, time_to_contact
 from reflex.interface import NoReflex
 from sim.events import Senses
 from sim.ik import ArmIK
-from sim.scene import CUBE_START, GRIPPER_OPEN, TABLE_TOP_Z, build_model, reset
-from teleop.hand import Retarget, ScriptedHand
+from sim.scene import CUBE_START, GRIPPER_OPEN, TABLE_TOP_Z, build_model, place_load, reset
+from teleop.hand import Retarget, ScriptedHand, lean, level
 
 
 def pick_script(home_pos: np.ndarray) -> ScriptedHand:
@@ -49,21 +49,36 @@ def pick_script(home_pos: np.ndarray) -> ScriptedHand:
     ])
 
 
+def waiter_script(wobble: float) -> ScriptedHand:
+    """Carry a tray briskly around above the table with an unsteady wrist."""
+    stops = [(0.0, 0.0, 0.0), (0.05, 0.25, 0.05), (-0.1, 0.25, -0.05), (-0.1, -0.25, 0.05), (0.05, -0.25, -0.05)]
+    waypoints, t = [], 0.0
+    for stop in [*stops, stops[0]]:
+        waypoints.append((t, stop, 0.0))
+        waypoints.append((t + 0.6, stop, 0.0))   # pause, then a quick move to the next stop
+        t += 1.5
+    return ScriptedHand(waypoints, wobble=wobble)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--source", choices=["scripted", "mouse", "glove"], default="scripted")
     parser.add_argument("--hand", choices=["left", "right"], default=None, help="which glove steers (default: the first seen)")
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--seconds", type=float, default=0.0, help="stop after this long (0 = until closed)")
-    parser.add_argument("--reflex", choices=["handwritten", "none"], default="handwritten")
+    parser.add_argument("--reflex", choices=["handwritten", "brain", "none"], default="handwritten")
+    parser.add_argument("--brain", default="runs/live/model.pt", help="trained model used by --reflex brain")
     parser.add_argument("--throw-every", type=float, default=0.0, help="seconds between throws (0 = only on keypress)")
     parser.add_argument("--aim-at", choices=["gripper", "forearm"], default="gripper")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--load", choices=["none", "tray"], default="none", help="tray: carry a loose ball on a tray")
+    parser.add_argument("--wobble", type=float, default=0.15, help="scripted wrist unsteadiness when carrying, radians")
     parser.add_argument("--view", action="store_true", help="serve the live web page")
     parser.add_argument("--view-port", type=int, default=8000)
     args = parser.parse_args()
 
-    model = build_model()
+    model = build_model(None if args.load == "none" else args.load)
+    carrying = args.load == "tray"
     data = mujoco.MjData(model)
     reset(model, data)
     ik = ArmIK(model)
@@ -71,7 +86,7 @@ def main() -> None:
     retarget = Retarget(home_pos, home_quat)
 
     if args.source == "scripted":
-        source = pick_script(home_pos)
+        source = waiter_script(args.wobble) if carrying else pick_script(home_pos)
     elif args.source == "glove":
         from mocap.glove import GloveHand
         source = GloveHand(hand=args.hand)
@@ -96,7 +111,11 @@ def main() -> None:
     view_every = round(0.05 / model.opt.timestep)  # 20 snapshots a second
     steps = 0
     peak: dict[str, float] = {}  # highest drive since the last snapshot, so brief spikes are not missed
-    reflex = HandwrittenReflex() if args.reflex == "handwritten" else NoReflex()
+    if args.reflex == "brain":
+        from brain.reflex import BrainReflex
+        reflex = BrainReflex(args.brain, threaded=not args.headless)
+    else:
+        reflex = HandwrittenReflex() if args.reflex == "handwritten" else NoReflex()
     rng = np.random.default_rng(args.seed)
     cube_qpos = model.jnt_qposadr[model.body("cube").jntadr[0]]
     highest = 0.0
@@ -104,6 +123,8 @@ def main() -> None:
     throws = hits = fired = 0
     hit_counted = True
     in_control = None
+    drops = 0
+    off_since = None
 
     def throw(aim_at: str) -> None:
         nonlocal throws, hit_counted
@@ -112,7 +133,7 @@ def main() -> None:
         throws += 1
 
     def step() -> None:
-        nonlocal highest, next_throw, hits, fired, hit_counted, in_control, steps
+        nonlocal highest, next_throw, hits, fired, hit_counted, in_control, steps, drops, off_since
         if view is not None:
             for aim in view.take_throws():  # asked for from the page
                 throw(aim)
@@ -154,8 +175,21 @@ def main() -> None:
             })
             peak.clear()
         # The blue box stays where the operator wants; the arm goes where the reflex allows.
-        data.ctrl[:7] = ik.step(data.mocap_pos[0] + command.gain * command.offset, data.mocap_quat[0])
+        quat = data.mocap_quat[0]
+        if command.level:
+            quat = lean(level(quat, home_quat), command.tilt)
+        data.ctrl[:7] = ik.step(data.mocap_pos[0] + command.gain * command.offset, quat)
         mujoco.mj_step(model, data)
+        if carrying:  # a load that has been off the tray for a moment counts as dropped and is put back
+            if events.load_on:
+                off_since = None
+            elif off_since is None:
+                off_since = data.time
+            elif data.time - off_since > 0.5:
+                drops += 1
+                off_since = None
+                place_load(model, data)
+                print(f"[{data.time:6.2f} s] load dropped")
         highest = max(highest, data.qpos[cube_qpos + 2] - TABLE_TOP_Z - 0.02)
 
     def done() -> bool:
@@ -192,6 +226,8 @@ def main() -> None:
 
     print(f"cube lifted {highest * 100:.1f} cm above the table at its highest; "
           f"ended at {np.round(data.qpos[cube_qpos:cube_qpos + 3], 3)}")
+    if carrying:
+        print(f"load dropped {drops} times in {data.time:.0f} s")
     if throws:
         print(f"{throws} throws, {hits} touched the arm, reflexes fired {fired} times")
 
