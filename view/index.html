@@ -3,250 +3,294 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Fly reflex teleop</title>
+<meta name="theme-color" content="#0c0c0c">
+<meta name="description" content="A live teleoperation demo with a reflex layer built on the Drosophila connectome.">
+<title>Fly Reflex — Junction 2026</title>
 <style>
   :root {
-    --page: #f4f3f0; --surface: #fcfcfb; --line: #dddbd5;
-    --text: #0b0b0b; --text-2: #52514e;
-    --operator: #2a78d6; --escape: #eb6834; --groom: #1baf7a;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      color-scheme: dark;
-      --page: #111110; --surface: #1a1a19; --line: #383835;
-      --text: #f0efec; --text-2: #c3c2b7;
-      --operator: #3987e5; --escape: #d95926; --groom: #199e70;
-    }
+    color-scheme: dark;
+    --page: #0c0c0c;
+    --surface: #151515;
+    --line: #2a2a2a;
+    --text: #f2f2f2;
+    --muted: #9a9a9a;
+    --quiet: #666;
+    /* The only colour on the page is in the two artworks. */
+    --glove: #c5e76a;     /* the glove's sensors */
+    --fly-eye: #ff3b30;   /* Drosophila's red eyes */
+    --fly-body: #e9a23b;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    --sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; padding: 20px 16px 32px; background: var(--page); color: var(--text);
-         font: 15px/1.45 system-ui, sans-serif; }
-  main { max-width: 1100px; margin: 0 auto; display: grid; gap: 14px; }
-  h1 { font-size: 18px; margin: 0; }
-  h2 { font-size: 13px; font-weight: 600; color: var(--text-2); margin: 0 0 8px; }
-  .top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-  .status { color: var(--text-2); font-size: 13px; }
-  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
-  .row { display: grid; gap: 14px; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); }
-  @media (max-width: 760px) { .row { grid-template-columns: 1fr; } }
-  .control { display: flex; align-items: center; gap: 14px; }
-  .dot { width: 22px; height: 22px; border-radius: 50%; background: var(--operator); flex: none; }
-  .who { font-size: 34px; font-weight: 700; line-height: 1.1; }
-  .why { color: var(--text-2); margin-top: 6px; min-height: 1.45em; }
-  .meter { height: 8px; background: var(--line); border-radius: 4px; margin-top: 12px; overflow: hidden; }
-  .meter > div { height: 100%; width: 0; background: var(--operator); border-radius: 4px; }
-  .meter-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-2); margin-top: 4px; }
-  .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; }
-  .tile b { display: block; font-size: 24px; font-variant-numeric: tabular-nums; }
-  .tile span { font-size: 12px; color: var(--text-2); }
-  .legend { display: flex; gap: 16px; font-size: 13px; color: var(--text-2); flex-wrap: wrap; margin-bottom: 4px; }
-  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
-  .chart { position: relative; }
-  svg { display: block; width: 100%; height: auto; }
-  .grid { stroke: var(--line); stroke-width: 1; }
-  .axis { fill: var(--text-2); font-size: 11px; }
-  .series { fill: none; stroke-width: 2; stroke-linejoin: round; }
-  .tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--line);
-         border-radius: 6px; padding: 6px 9px; font-size: 12px; display: none; white-space: nowrap; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
-  td { padding: 3px 0; border-top: 1px solid var(--line); }
-  td:first-child { width: 70px; color: var(--text-2); }
-  td i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 7px; }
-  #scene { display: block; width: 100%; height: 480px; border: 0; border-radius: 6px; background: #16181d; }
-  .actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
-  .actions span { color: var(--text-2); font-size: 13px; }
-  button { font: inherit; font-weight: 600; padding: 7px 14px; border-radius: 8px; cursor: pointer;
-           color: var(--text); background: var(--page); border: 1px solid var(--line); }
-  button:hover { border-color: var(--text-2); }
-  button:active { background: var(--line); }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--page); color: var(--text); font: 14px/1.5 var(--sans); }
+  button { font: inherit; color: inherit; }
+  .label { color: var(--quiet); font: 10px/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+
+  .shell { min-height: 100%; max-width: 1560px; margin: 0 auto; padding: 0 28px 20px; display: flex; flex-direction: column; }
+  header { height: 56px; flex: none; display: flex; align-items: center; justify-content: space-between; }
+  .wordmark { font-size: 13px; font-weight: 700; letter-spacing: .18em; }
+  .wordmark span { margin-left: 12px; color: var(--quiet); font-weight: 400; letter-spacing: .08em; }
+  .connection { display: inline-flex; align-items: center; gap: 8px; }
+  .connection i { width: 7px; height: 7px; border-radius: 50%; background: var(--quiet); }
+  .connection.is-live i { background: var(--text); }
+
+  main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 20px; }
+  .stage { min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+  #scene { flex: 1; min-height: 420px; width: 100%; border: 0; border-radius: 10px; background: #111; }
+  .stage-bar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .actions { display: flex; gap: 8px; }
+  .button { height: 34px; padding: 0 14px; background: transparent; border: 1px solid var(--line); border-radius: 17px;
+            cursor: pointer; transition: border-color .15s, color .15s; }
+  .button:hover { border-color: var(--muted); }
+  .button:active { transform: translateY(1px); }
+  .button:focus-visible, .mode:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  kbd { margin-left: 8px; color: var(--quiet); font: 10px var(--mono); }
+
+  aside { min-height: 0; display: flex; flex-direction: column; gap: 22px; }
+  .authority { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; padding-top: 4px; }
+  .who { margin-top: 6px; font-size: 30px; font-weight: 600; letter-spacing: -.04em; line-height: 1.1; white-space: nowrap; }
+  .why { min-height: 62px; margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+  .cast { grid-row: 1 / span 2; grid-column: 2; display: flex; gap: 6px; align-items: center; }
+  .cast svg { width: 64px; height: 64px; filter: grayscale(1); opacity: .28; }
+  .cast svg.on { filter: none; opacity: 1; }
+  .meter { grid-column: 1 / -1; height: 2px; margin-top: 10px; background: var(--line); border-radius: 1px; overflow: hidden; }
+  .meter > div { height: 100%; width: 0; background: var(--text); }
+
+  .brain { display: flex; flex-direction: column; gap: 8px; }
+  .brain-head { display: flex; justify-content: space-between; align-items: baseline; }
+  #brain { display: block; width: 100%; aspect-ratio: 400 / 250; background: var(--surface); border-radius: 10px; }
+  .legend { display: flex; justify-content: space-between; }
+  .brain[hidden] { display: none; }
+
+  .modes { display: grid; grid-template-columns: repeat(3, 1fr); padding: 3px; margin-top: 8px; background: var(--surface); border-radius: 10px; }
+  .mode { height: 38px; background: transparent; border: 0; border-radius: 8px; color: var(--muted); cursor: pointer; transition: background .15s, color .15s; }
+  .mode:hover { color: var(--text); }
+  .mode.on { background: var(--text); color: var(--page); font-weight: 600; }
+  .mode-note { min-height: 16px; margin-top: 6px; }
+
+  table { width: 100%; margin-top: 4px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th { padding: 6px 0; text-align: right; font-weight: 400; }
+  td { padding: 9px 0; text-align: right; border-top: 1px solid var(--line); color: var(--muted); }
+  th:first-child, td:first-child { text-align: left; }
+  tr.on td { color: var(--text); }
+  tr.on td:first-child::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 8px; border-radius: 50%; background: var(--text); vertical-align: 2px; }
+  td.big { font-size: 18px; color: var(--text); }
+
+  @media (max-width: 1000px) {
+    main { grid-template-columns: 1fr; }
+    #scene { min-height: 56vw; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
-<main>
-  <div class="top">
-    <h1>Fly reflex teleop</h1>
-    <div class="status" id="status">connecting…</div>
-  </div>
+<div class="shell">
+  <header>
+    <div class="wordmark">FLY REFLEX<span>Junction 2026 · Rokoko</span></div>
+    <div class="connection label" id="connection" role="status" aria-live="polite"><i></i><span id="status">Connecting</span></div>
+  </header>
 
-  <div class="card" id="sceneCard">
-    <h2>The arm</h2>
-    <iframe id="scene" title="3D view of the arm" credentialless allow="cross-origin-isolated"></iframe>
-    <div class="actions">
-      <button id="throwGripper">Throw at gripper</button>
-      <button id="throwForearm">Throw at forearm</button>
-      <span id="throwNote">or press T / F</span>
-    </div>
-  </div>
-
-  <div class="row">
-    <div class="card">
-      <h2>In control now</h2>
-      <div class="control"><div class="dot" id="dot"></div><div class="who" id="who">Operator</div></div>
-      <div class="why" id="why">Waiting for data.</div>
-      <div class="meter"><div id="gain"></div></div>
-      <div class="meter-label"><span>Operator steers</span><span id="gainText">reflex override 0%</span><span>Reflex steers</span></div>
-    </div>
-    <div class="card">
-      <h2>What the arm senses</h2>
-      <div class="tiles">
-        <div class="tile"><b id="ttc">–</b><span>seconds to impact</span></div>
-        <div class="tile"><b id="miss">–</b><span>cm from the gripper at closest</span></div>
-        <div class="tile"><b id="force">0.0</b><span>newtons of touch on the arm</span></div>
-        <div class="tile"><b id="score">0 / 0</b><span>throws that touched the arm</span></div>
+  <main>
+    <section class="stage" id="sceneCard">
+      <iframe id="scene" title="Live 3D simulation of the teleoperated robot arm" credentialless allow="cross-origin-isolated"></iframe>
+      <div class="stage-bar">
+        <span class="label">The glove operator steers. The fly reflex reacts.</span>
+        <div class="actions">
+          <button class="button" id="throwGripper" type="button">Throw at gripper<kbd>T</kbd></button>
+          <button class="button" id="throwForearm" type="button">Throw at forearm<kbd>F</kbd></button>
+        </div>
       </div>
-    </div>
-  </div>
+    </section>
 
-  <div class="card">
-    <h2>Reflex drive over the last 15 seconds (a reflex fires when its drive reaches 1)</h2>
-    <div class="legend">
-      <span><i style="background:var(--escape)"></i>Escape drive</span>
-      <span><i style="background:var(--groom)"></i>Groom drive</span>
-      <span>Strip along the top: who was in control</span>
-    </div>
-    <div class="chart" id="chart">
-      <svg id="svg" viewBox="0 0 1000 260" role="img" aria-label="Escape and groom drive over time">
-        <g id="strip"></g>
-        <g id="gridlines"></g>
-        <polyline id="lineGroom" class="series" stroke="var(--groom)"/>
-        <polyline id="lineEscape" class="series" stroke="var(--escape)"/>
-        <text id="labelEscape" class="axis" text-anchor="start"></text>
-        <text id="labelGroom" class="axis" text-anchor="start"></text>
-        <line id="cross" class="grid" y1="34" y2="230" style="display:none;stroke:var(--text-2)"/>
-      </svg>
-      <div class="tip" id="tip"></div>
-    </div>
-  </div>
+    <aside>
+      <section class="authority" aria-live="polite">
+        <div>
+          <div class="label">In control</div>
+          <div class="who" id="who">Glove operator</div>
+        </div>
+        <div class="cast" aria-hidden="true">
+          <svg id="artGlove" viewBox="0 0 120 120" role="img" aria-label="A motion-capture glove">
+            <g fill="#1c1c1c" stroke="#d8d8d8" stroke-width="2.5" stroke-linejoin="round">
+              <rect x="20" y="52" width="13" height="34" rx="6.5" transform="rotate(-38 26 69)"/>
+              <rect x="38" y="24" width="11" height="44" rx="5.5"/>
+              <rect x="51" y="16" width="11" height="52" rx="5.5"/>
+              <rect x="64" y="20" width="11" height="48" rx="5.5"/>
+              <rect x="77" y="30" width="11" height="38" rx="5.5"/>
+              <rect x="36" y="58" width="54" height="42" rx="13"/>
+              <rect x="42" y="98" width="42" height="12" rx="4"/>
+            </g>
+            <g fill="none" stroke="var(--glove)" stroke-width="1.5" opacity=".75">
+              <path d="M63 78 43.5 31M63 78 56.5 23M63 78 69.5 27M63 78 82.5 37M63 78 21 59"/>
+            </g>
+            <g fill="var(--glove)">
+              <circle cx="43.5" cy="31" r="3.5"/><circle cx="56.5" cy="23" r="3.5"/><circle cx="69.5" cy="27" r="3.5"/>
+              <circle cx="82.5" cy="37" r="3.5"/><circle cx="21" cy="59" r="3.5"/>
+              <rect x="55" y="71" width="16" height="14" rx="3"/>
+            </g>
+          </svg>
+          <svg id="artFly" viewBox="0 0 120 120" role="img" aria-label="A fruit fly, seen from above">
+            <g fill="none" stroke="#8a8a8a" stroke-width="2" stroke-linecap="round">
+              <path d="M50 48 30 36 22 24M70 48 90 36 98 24M48 56 26 58 16 66M72 56 94 58 104 66M50 64 34 80 30 96M70 64 86 80 90 96"/>
+              <path d="M55 22 51 13M65 22 69 13"/>
+            </g>
+            <g fill="#ffffff" fill-opacity=".14" stroke="#e6e6e6" stroke-opacity=".6" stroke-width="1.5">
+              <ellipse cx="39" cy="78" rx="13" ry="32" transform="rotate(24 39 78)"/>
+              <ellipse cx="81" cy="78" rx="13" ry="32" transform="rotate(-24 81 78)"/>
+            </g>
+            <ellipse cx="60" cy="80" rx="12" ry="21" fill="var(--fly-body)"/>
+            <path d="M49.5 72h21M48.5 80h23M49.5 88h21M53 96h14" stroke="#4a3210" stroke-width="3.2" stroke-linecap="round"/>
+            <ellipse cx="60" cy="52" rx="14" ry="13" fill="#c98a2e"/>
+            <ellipse cx="60" cy="33" rx="10" ry="8" fill="#a8742a"/>
+            <ellipse cx="49" cy="32" rx="7" ry="9" fill="var(--fly-eye)"/>
+            <ellipse cx="71" cy="32" rx="7" ry="9" fill="var(--fly-eye)"/>
+          </svg>
+        </div>
+        <p class="why" id="why">Waiting for the simulation.</p>
+        <div class="meter" aria-label="How much the fly reflex is overriding the glove operator"><div id="gain"></div></div>
+      </section>
 
-  <div class="card">
-    <h2>Changes of control</h2>
-    <table id="log"><tbody></tbody></table>
-  </div>
-</main>
+      <section class="brain" id="brainCard" hidden>
+        <div class="brain-head"><span class="label">Fly looming circuit · live</span><span class="label" id="brainNote"></span></div>
+        <canvas id="brain" width="800" height="500" role="img" aria-label="Neurons of the fly's looming circuit, lighting up as objects approach"></canvas>
+        <div class="legend label"><span>Left eye</span><span>Descending neurons, to the body</span><span>Right eye</span></div>
+      </section>
+
+      <section>
+        <div class="label">Fly reflex</div>
+        <div class="modes" role="group" aria-label="Choose the fly reflex">
+          <button class="mode" data-mode="none" type="button" aria-pressed="false">Off<kbd>1</kbd></button>
+          <button class="mode" data-mode="eye-geometric" type="button" aria-pressed="false">Geometry<kbd>2</kbd></button>
+          <button class="mode" data-mode="eye-fly" type="button" aria-pressed="false">Fly circuit<kbd>3</kbd></button>
+        </div>
+        <div class="label mode-note" id="modeNote" aria-live="polite"></div>
+        <table id="scores">
+          <thead><tr class="label"><th>Fly reflex</th><th>Thrown</th><th>Hit the arm</th><th class="carry">Load drops</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </aside>
+  </main>
+</div>
 
 <script>
-const WINDOW = 15, X0 = 40, X1 = 930, Y0 = 34, Y1 = 230, TOP = 2;   // seconds; plot box; drive axis max
-const NAMES = { operator: "Operator", escape: "Escape reflex", groom: "Grooming reflex" };
 const $ = id => document.getElementById(id);
-const samples = [];
-let lastControl = null, hoverX = null;
+const MODES = [...document.querySelectorAll("[data-mode]")].map(b => b.dataset.mode);
+const MODE_NAMES = { none: "Off", "eye-geometric": "Geometry", "eye-fly": "Fly circuit", continuous: "Geometry, exact state",
+                     spectral: "Fly circuit, exact state", handwritten: "Single jump", brain: "Fly classifier" };
+let latest = null;
 
-const x = (t, now) => X1 - (now - t) / WINDOW * (X1 - X0);
-const y = v => Y1 - Math.min(v, TOP) / TOP * (Y1 - Y0);
-
+// ---- who is in control
 function why(s) {
-  if (s.control === "escape") return "Something was about to hit the gripper, so the arm stepped out of its path.";
-  if (s.control === "groom") return "Something touched the arm, so it is shaking it off.";
-  if (s.ttc !== null) return `An object is ${s.ttc.toFixed(2)} s away and will pass ${(s.miss * 100).toFixed(0)} cm from the gripper.`;
-  return "Nothing is approaching. The arm follows the operator's hand.";
+  const steadying = s.carrying && (s.drive.steady || 0) > 0.15;
+  if (s.control !== "operator") return "Stepping clear of an object on a collision course" + (steadying ? ", leaning the tray to keep the load on." : ".");
+  if (steadying) return "Following the hand, leaning the tray to keep the load on.";
+  if (s.ttc !== null) return `An object will pass ${(s.miss * 100).toFixed(0)} cm away in ${s.ttc.toFixed(2)} s.`;
+  return s.mode === "none" ? "Following the hand. The fly reflex is off." : "Following the hand. Nothing is on a collision course.";
 }
-
-function draw() {
-  if (!samples.length) return;
-  const s = samples[samples.length - 1], now = s.t;
-  while (samples.length && samples[0].t < now - WINDOW) samples.shift();
-
-  $("dot").style.background = `var(--${s.control})`;
-  $("who").textContent = NAMES[s.control];
+function drawStatus(s) {
+  const reflex = s.control !== "operator";
+  $("who").textContent = reflex ? "Fly reflex" : "Glove operator";
+  $("artFly").classList.toggle("on", reflex);
+  $("artGlove").classList.toggle("on", !reflex);
   $("why").textContent = why(s);
-  $("gain").style.width = (s.gain * 100).toFixed(0) + "%";
-  $("gain").style.background = `var(--${s.control})`;
-  $("gainText").textContent = `reflex override ${(s.gain * 100).toFixed(0)}%`;
-  $("ttc").textContent = s.ttc === null ? "–" : s.ttc.toFixed(2);
-  $("miss").textContent = s.ttc === null ? "–" : (s.miss * 100).toFixed(0);
-  $("force").textContent = s.force.toFixed(1);
-  $("score").textContent = `${s.hits} / ${s.throws}`;
+  $("gain").style.width = `${Math.max(0, Math.min(s.gain, 1)) * 100}%`;
+}
 
-  const pts = k => samples.map(p => `${x(p.t, now).toFixed(1)},${y(p.drive[k] || 0).toFixed(1)}`).join(" ");
-  $("lineEscape").setAttribute("points", pts("escape"));
-  $("lineGroom").setAttribute("points", pts("groom"));
-  const ye = y(s.drive.escape || 0), yg = y(s.drive.groom || 0);
-  const apart = Math.abs(ye - yg) < 13 ? 13 : 0;          // keep the two end labels from overlapping
-  place("labelEscape", "Escape", ye - (apart && ye <= yg ? apart / 2 : 0) + (apart && ye > yg ? apart / 2 : 0));
-  place("labelGroom", "Groom", yg + (apart && ye <= yg ? apart / 2 : 0) - (apart && ye > yg ? apart / 2 : 0));
+// ---- reflex mode and its scores
+function setMode(mode) {
+  fetch(`/mode?reflex=${encodeURIComponent(mode)}`, { method: "POST" })
+    .then(r => { $("modeNote").textContent = r.ok ? "" : "Mode change refused"; })
+    .catch(() => { $("modeNote").textContent = "The teleop program is not running"; });
+}
+document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
+function drawScores(s) {
+  if (!s.scores) return;
+  document.querySelectorAll("[data-mode]").forEach(b => {
+    const on = b.dataset.mode === s.mode;
+    b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on));
+  });
+  document.querySelectorAll("#scores .carry").forEach(c => c.style.display = s.carrying ? "" : "none");
+  const shown = [...MODES, ...Object.keys(s.scores).filter(m => !MODES.includes(m))];
+  $("scores").tBodies[0].innerHTML = shown.map(mode => {
+    const v = s.scores[mode] || { throws: 0, hits: 0, drops: 0 };
+    return `<tr class="${mode === s.mode ? "on" : ""}"><td>${MODE_NAMES[mode] || mode}</td><td>${v.throws}</td>` +
+           `<td class="big">${v.throws ? v.hits : "–"}</td>` + (s.carrying ? `<td class="big">${v.drops}</td>` : "") + `</tr>`;
+  }).join("");
+}
 
-  let strip = "";
-  for (let i = 0; i < samples.length - 1; i++) {
-    const a = x(samples[i].t, now), b = x(samples[i + 1].t, now);
-    strip += `<rect x="${a.toFixed(1)}" y="12" width="${Math.max(b - a + 0.5, 0.5).toFixed(1)}" height="10" fill="var(--${samples[i].control})"/>`;
+// ---- the neurons
+const canvas = $("brain"), ctx = canvas.getContext("2d");
+let layout = null, glow = null, level = { detectors: [], descending: [] };
+function sprite(colour) {   // one soft dot, drawn once and reused for every neuron
+  const c = document.createElement("canvas"); c.width = c.height = 64;
+  const g = c.getContext("2d"), fill = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  fill.addColorStop(0, colour); fill.addColorStop(0.25, colour + "aa"); fill.addColorStop(1, colour + "00");
+  g.fillStyle = fill; g.fillRect(0, 0, 64, 64);
+  return c;
+}
+function place([x, y]) {    // unit box -> canvas, keeping the brain's proportions
+  const pad = 36, w = canvas.width - 2 * pad;
+  return [pad + x * w, canvas.height / 2 + (y - 0.5) * w];
+}
+function drawBrain() {
+  if (!layout) return;
+  ctx.globalCompositeOperation = "source-over";
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#2c2c2c";
+  for (const p of layout.rest) { const [x, y] = place(p); ctx.fillRect(x - 1, y - 1, 2, 2); }
+  let active = 0;
+  for (const group of ["detectors", "descending"]) {
+    const target = latest && latest.neurons ? latest.neurons[group] : [];
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = "#5a5a5a";
+    layout[group].forEach(p => { const [x, y] = place(p); ctx.beginPath(); ctx.arc(x, y, 2.2, 0, 6.3); ctx.fill(); });
+    ctx.globalCompositeOperation = "lighter";
+    layout[group].forEach((p, i) => {
+      const want = (target[i] || 0) / 99, now = level[group][i] || 0;
+      const a = level[group][i] = want > now ? want : now * 0.9;   // light at once, fade over a few frames
+      if (a < 0.03) return;
+      active++;
+      const [x, y] = place(p), size = 7 + 15 * a;      // small enough that a dense cluster keeps its colour
+      ctx.globalAlpha = 0.15 + 0.6 * a;
+      ctx.drawImage(glow, x - size / 2, y - size / 2, size, size);
+    });
+    ctx.globalAlpha = 1;
   }
-  $("strip").innerHTML = strip;
-  if (hoverX !== null) showTip();
+  $("brainNote").textContent = active ? `${active} active` : "quiet";
 }
+fetch("/layout").then(r => r.json()).then(l => {
+  if (!l.detectors) return;
+  glow = sprite("#ffffff");
+  layout = l; $("brainCard").hidden = false;
+}).catch(() => {});
 
-function place(id, text, yy) {
-  const el = $(id); el.textContent = text; el.setAttribute("x", X1 + 8); el.setAttribute("y", yy + 4);
-}
-
-function gridlines() {
-  let g = "";
-  for (const v of [0, 1, 2]) {
-    g += `<line class="grid" x1="${X0}" x2="${X1}" y1="${y(v)}" y2="${y(v)}" ${v === 1 ? 'stroke-dasharray="5 4" style="stroke:var(--text-2)"' : ""}/>`;
-    g += `<text class="axis" x="${X0 - 8}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
-  }
-  g += `<text class="axis" x="${X0 + 6}" y="${y(1) - 6}">fires at 1</text>`;
-  for (let k = 0; k <= WINDOW; k += 5)
-    g += `<text class="axis" x="${X1 - k / WINDOW * (X1 - X0)}" y="250" text-anchor="middle">${k ? k + " s ago" : "now"}</text>`;
-  $("gridlines").innerHTML = g;
-}
-
-function showTip() {
-  const now = samples[samples.length - 1].t;
-  let best = null, gap = Infinity;
-  for (const p of samples) { const d = Math.abs(x(p.t, now) - hoverX); if (d < gap) { gap = d; best = p; } }
-  if (!best) return;
-  const px = x(best.t, now), box = $("svg").getBoundingClientRect(), k = box.width / 1000;
-  $("cross").style.display = ""; $("cross").setAttribute("x1", px); $("cross").setAttribute("x2", px);
-  const tip = $("tip");
-  tip.style.display = "block";
-  tip.innerHTML = `<b>${(now - best.t).toFixed(1)} s ago</b><br>Escape drive ${(best.drive.escape || 0).toFixed(2)}<br>Groom drive ${(best.drive.groom || 0).toFixed(2)}<br>In control: ${NAMES[best.control]}`;
-  tip.style.left = Math.min(px * k + 12, box.width - tip.offsetWidth - 4) + "px";
-  tip.style.top = (40 * k) + "px";
-}
-
-$("chart").addEventListener("mousemove", e => {
-  const box = $("svg").getBoundingClientRect();
-  hoverX = Math.max(X0, Math.min(X1, (e.clientX - box.left) / box.width * 1000));
-  if (samples.length) showTip();
-});
-$("chart").addEventListener("mouseleave", () => { hoverX = null; $("tip").style.display = "none"; $("cross").style.display = "none"; });
-
-function logChange(s) {
-  const row = document.createElement("tr");
-  row.innerHTML = `<td>${s.t.toFixed(1)} s</td><td><i style="background:var(--${s.control})"></i>${NAMES[s.control]} took control</td>`;
-  const body = $("log").tBodies[0];
-  body.prepend(row);
-  while (body.rows.length > 8) body.deleteRow(-1);
-}
-
-const VIEWER_PORT = __VIEWER_PORT__;   // filled in by the server; 0 when no 3D viewer is running
+// ---- the 3D view and throwing
+const VIEWER_PORT = __VIEWER_PORT__;
 if (VIEWER_PORT) $("scene").src = `http://${location.hostname}:${VIEWER_PORT}/`;
-else $("sceneCard").style.display = "none";
-
+else $("scene").style.display = "none";
 function throwBall(aim) {
-  fetch(`/throw?aim=${aim}`, { method: "POST" })
-    .then(r => { $("throwNote").textContent = r.ok ? "or press T / F" : "throw was refused"; })
-    .catch(() => { $("throwNote").textContent = "throw not sent: the teleop program is not running"; });
+  fetch(`/throw?aim=${encodeURIComponent(aim)}`, { method: "POST" })
+    .then(r => { $("modeNote").textContent = r.ok ? "" : "Throw refused"; })
+    .catch(() => { $("modeNote").textContent = "The teleop program is not running"; });
 }
 $("throwGripper").addEventListener("click", () => throwBall("gripper"));
 $("throwForearm").addEventListener("click", () => throwBall("forearm"));
 addEventListener("keydown", e => {
   if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.key === "t" || e.key === "T") throwBall("gripper");
-  else if (e.key === "f" || e.key === "F") throwBall("forearm");
+  const key = e.key.toLowerCase();
+  if (key === "t") throwBall("gripper");
+  else if (key === "f") throwBall("forearm");
+  else if ("123".includes(key) && MODES[+key - 1]) setMode(MODES[+key - 1]);
 });
 
-gridlines();
+// ---- the live stream
 const stream = new EventSource("/events");
-stream.onopen = () => $("status").textContent = "live";
-stream.onerror = () => $("status").textContent = "disconnected, retrying…";
-stream.onmessage = e => {
-  const s = JSON.parse(e.data);
-  if (samples.length && s.t < samples[samples.length - 1].t) { samples.length = 0; lastControl = null; }  // sim restarted
-  samples.push(s);
-  if (s.control !== lastControl) { if (lastControl !== null) logChange(s); lastControl = s.control; }
-};
-(function frame() { draw(); requestAnimationFrame(frame); })();
+stream.onopen = () => { $("status").textContent = "Live"; $("connection").classList.add("is-live"); };
+stream.onerror = () => { $("status").textContent = "Reconnecting"; $("connection").classList.remove("is-live"); };
+stream.onmessage = e => { latest = JSON.parse(e.data); drawStatus(latest); drawScores(latest); };
+(function frame() { drawBrain(); requestAnimationFrame(frame); })();
 </script>
 </body>
 </html>

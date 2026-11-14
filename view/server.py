@@ -3,7 +3,7 @@
 The teleop loop calls `publish()` with a snapshot a few times a second; the
 page (view/index.html) listens on a server-sent-events stream. The page also embeds
 MuJoCo's own web viewer (served by MuJoCo on `viewer_port`) and posts throw
-requests here, which the teleop loop collects with `take_throws()`. Standard
+requests and reflex-mode changes here, which the teleop loop collects with `take_throws()` and `take_mode()`. Standard
 library only.
 """
 
@@ -17,13 +17,16 @@ from urllib.parse import parse_qs, urlsplit
 PAGE = Path(__file__).with_name("index.html")
 HISTORY = 400  # snapshots replayed to a page that connects late (20 s at 20 Hz)
 AIMS = ("gripper", "forearm")
+MODES = ("none", "continuous", "spectral", "eye-geometric", "eye-fly")
 
 
 class LiveView:
-    def __init__(self, port: int = 8000, viewer_port: int | None = None):
+    def __init__(self, port: int = 8000, viewer_port: int | None = None, layout: dict | None = None):
+        self.layout = layout or {}   # where to draw each neuron (brain.layout); empty hides the brain panel
         self.port = port
         self._throws: list[str] = []
         self._throws_lock = threading.Lock()
+        self._mode: str | None = None
         self._history: deque[tuple[int, str]] = deque(maxlen=HISTORY)
         self._seq = 0
         self._changed = threading.Condition()
@@ -36,6 +39,13 @@ class LiveView:
             def do_GET(self) -> None:
                 if self.path == "/events":
                     view._stream(self)
+                elif self.path == "/layout":
+                    body = json.dumps(view.layout).encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
                 elif urlsplit(self.path).path in ("/", "/index.html"):
                     body = PAGE.read_text().replace("__VIEWER_PORT__", str(viewer_port or 0)).encode()
                     self.send_response(200)
@@ -53,7 +63,15 @@ class LiveView:
             def do_POST(self) -> None:
                 url = urlsplit(self.path)
                 aim = parse_qs(url.query).get("aim", [""])[0]
-                if url.path != "/throw":
+                if url.path == "/mode":
+                    mode = parse_qs(url.query).get("reflex", [""])[0]
+                    if mode not in MODES:
+                        self.send_error(400, "reflex must be one of " + ", ".join(MODES))
+                    else:
+                        view._mode = mode
+                        self.send_response(204)
+                        self.end_headers()
+                elif url.path != "/throw":
                     self.send_error(404)
                 elif aim not in AIMS:
                     self.send_error(400, "aim must be gripper or forearm")
@@ -73,6 +91,11 @@ class LiveView:
         with self._throws_lock:
             throws, self._throws = self._throws, []
         return throws
+
+    def take_mode(self) -> str | None:
+        """The reflex mode asked for from the page since the last call, if any."""
+        mode, self._mode = self._mode, None
+        return mode
 
     def close(self) -> None:
         self._server.shutdown()

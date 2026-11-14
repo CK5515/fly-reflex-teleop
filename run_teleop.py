@@ -13,6 +13,7 @@ In the viewer window, press T to throw a ball at the gripper and F to throw one 
 """
 
 import argparse
+from pathlib import Path
 import socket
 import time
 
@@ -66,9 +67,12 @@ def main() -> None:
     parser.add_argument("--hand", choices=["left", "right"], default=None, help="which glove steers (default: the first seen)")
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--seconds", type=float, default=0.0, help="stop after this long (0 = until closed)")
-    parser.add_argument("--reflex", choices=["continuous", "spectral", "handwritten", "brain", "none"], default="continuous",
+    parser.add_argument("--reflex", choices=["continuous", "spectral", "eye-geometric", "eye-fly", "handwritten", "brain", "none"], default="continuous",
                         help="continuous: smooth avoidance by geometry; spectral: the same, with the danger map "
                              "computed by the connectome model; handwritten / brain: the earlier single-jump reflexes")
+    parser.add_argument("--eye-noise", choices=["none", "moderate", "heavy"], default="moderate",
+                        help="for the eye-* reflexes: how noisy the eye's bearing and apparent-size measurements are")
+    parser.add_argument("--eye-model", default="runs/threat/eye_model.npz", help="fitted model used by --reflex eye-fly")
     parser.add_argument("--threat-model", default="runs/threat/model.npz", help="fitted model used by --reflex spectral")
     parser.add_argument("--brain", default="runs/live/model.pt", help="trained model used by --reflex brain")
     parser.add_argument("--throw-every", type=float, default=0.0, help="seconds between throws (0 = only on keypress)")
@@ -101,8 +105,10 @@ def main() -> None:
     else:
         source = None  # the viewer moves the target directly
 
-    senses = Senses(model)
-    view = scene_view = None
+    from sim.eye import Eye
+    senses = Senses(model, eye=Eye(max(args.volley, 1), args.eye_noise, seed=args.seed))
+    view = scene_view = watcher = None
+    descending_peak = 1e-6
     if args.view:
         from mujoco.studio import launch_passive, viewer_protocol
         from view.server import LiveView
@@ -114,22 +120,41 @@ def main() -> None:
         except OSError:
             raise SystemExit(f"port {scene_port} is in use; pick another with --view-port") from None
         scene_view = launch_passive.launch(viewer_protocol.ViewerConfig(gfx="web", http_port=scene_port))
-        view = LiveView(args.view_port, viewer_port=scene_port)
+        from brain.layout import load_layout
+        show_neurons = Path(args.eye_model).exists()
+        view = LiveView(args.view_port, viewer_port=scene_port, layout=load_layout() if show_neurons else None)
+        if show_neurons:   # the fly circuit is always watching, whichever mode is acting
+            from brain.threat import EyeFlyReflex
+            watcher = EyeFlyReflex(args.eye_model)
     scene_every = round(1 / 60 / model.opt.timestep)  # the 3D view is refreshed 60 times a second
     view_every = round(0.05 / model.opt.timestep)  # 20 snapshots a second
     steps = 0
     peak: dict[str, float] = {}  # highest drive since the last snapshot, so brief spikes are not missed
-    if args.reflex == "continuous":
-        from reflex.continuous import ContinuousReflex
-        reflex = ContinuousReflex()
-    elif args.reflex == "spectral":
-        from brain.threat import SpectralThreatReflex
-        reflex = SpectralThreatReflex(args.threat_model)
-    elif args.reflex == "brain":
-        from brain.reflex import BrainReflex
-        reflex = BrainReflex(args.brain, threaded=not args.headless)
-    else:
-        reflex = HandwrittenReflex() if args.reflex == "handwritten" else NoReflex()
+    def make_reflex(mode: str):
+        if mode == "continuous":
+            from reflex.continuous import ContinuousReflex
+            return ContinuousReflex()
+        if mode == "spectral":
+            from brain.threat import SpectralThreatReflex
+            return SpectralThreatReflex(args.threat_model)
+        if mode == "eye-geometric":
+            from reflex.eye import EyeGeometricReflex
+            return EyeGeometricReflex()
+        if mode == "eye-fly":
+            from brain.threat import EyeFlyReflex
+            return EyeFlyReflex(args.eye_model)
+        if mode == "brain":
+            from brain.reflex import BrainReflex
+            return BrainReflex(args.brain, threaded=not args.headless)
+        return HandwrittenReflex() if mode == "handwritten" else NoReflex()
+
+    mode = args.reflex
+    reflex = make_reflex(mode)
+    # Outcomes per reflex mode, so modes switched between on the page can be compared.
+    scores: dict[str, dict[str, int]] = {}
+    score = lambda m: scores.setdefault(m, {"throws": 0, "hits": 0, "drops": 0})
+    thrown_in: dict[int, str] = {}   # ball -> the mode that was active when it was thrown
+    score(mode)
     rng = np.random.default_rng(args.seed)
     cube_qpos = model.jnt_qposadr[model.body("cube").jntadr[0]]
     highest = 0.0
@@ -159,14 +184,37 @@ def main() -> None:
             return False
         unhit.add(ball)
         in_flight[ball] = data.time
+        thrown_in[ball] = mode
+        score(mode)["throws"] += 1
         throws += 1
         return True
 
+    def neuron_activity(events) -> dict:
+        """What the looming detectors and descending neurons are doing, as 0-99 per neuron, for the page."""
+        nonlocal descending_peak
+        if watcher is None:
+            return {}
+        from brain.threat import eye_activity
+        detectors = eye_activity(watcher.retina, events.sights or [], events.t, watcher.p)
+        descending = np.abs((detectors.reshape(2, -1) @ watcher.through.T)[0])
+        descending_peak = max(descending_peak * 0.999, float(descending.max()))
+        scale = lambda v: np.clip(np.round(v * 99), 0, 99).astype(int).tolist()
+        return {"neurons": {"detectors": scale(detectors[:len(detectors) // 2]),
+                            "descending": scale((descending / descending_peak) ** 2)}}   # squared: the strongest stand out
+
     def step() -> None:
-        nonlocal highest, next_throw, hits, fired, in_control, steps, drops, off_since, last_hit, last_dodge, load_state, cause
+        nonlocal highest, next_throw, hits, fired, in_control, steps, drops, off_since, last_hit, last_dodge, load_state, cause, mode, reflex
         if view is not None:
             for aim in view.take_throws():  # asked for from the page
                 throw(aim)
+            wanted = view.take_mode()
+            if wanted is not None and wanted != mode:
+                try:
+                    reflex, mode = make_reflex(wanted), wanted
+                    score(mode)
+                    print(f"[{data.time:6.2f} s] reflex mode: {mode}")
+                except FileNotFoundError as missing:
+                    print(f"cannot switch to {wanted}: {missing}")
         for ball, thrown_at in list(in_flight.items()):
             if data.time - thrown_at > SPENT_AFTER:
                 senses.park(data, ball)
@@ -193,6 +241,7 @@ def main() -> None:
             print(f"[{data.time:6.2f} s] {in_control or 'operator'} in control")
         for ball in events.touching & unhit:  # one hit per thrown ball, however often it bounces
             hits += 1
+            score(thrown_in.get(ball, mode))["hits"] += 1
             unhit.discard(ball)
         steps += 1
         for name, drive in command.activations.items():
@@ -211,6 +260,10 @@ def main() -> None:
                 "force": round(events.contact_force, 2),
                 "throws": throws,
                 "hits": hits,
+                "mode": mode,
+                **neuron_activity(events),
+                "carrying": carrying,
+                "scores": scores,
             })
             peak.clear()
         # The blue box stays where the operator wants; the arm goes where the reflex allows.
@@ -235,6 +288,7 @@ def main() -> None:
             elif load_state == "off" and data.time - off_since > 0.5:
                 load_state = "dropped"
                 drops += 1
+                score(mode)["drops"] += 1
                 causes[cause] += 1
                 print(f"[{data.time:6.2f} s] load dropped ({cause})")
             elif load_state == "dropped" and data.time - max(off_since + 0.5, last_hit, last_dodge) > 0.7:

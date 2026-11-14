@@ -10,7 +10,8 @@ GRAVITY = np.array([0.0, 0.0, -9.81])
 
 
 class Senses:
-    def __init__(self, model: mujoco.MjModel):
+    def __init__(self, model: mujoco.MjModel, eye=None):
+        self.eye = eye   # sim.eye.Eye, or None when the reflex is given exact positions
         self.model = model
         self.site = model.site("grasp").id
         self.hand = model.body("hand").id
@@ -78,6 +79,8 @@ class Senses:
             object_radius=BALL_RADIUS,
             contact_force=self.touch(data),
             objects=objects,
+            sights=None if self.eye is None else self.eye.look(
+                data.time, [data.xpos[b] - data.mocap_pos[0] for b in self.ball_bodies], BALL_RADIUS),
             touching=frozenset(self._touching),
         )
 

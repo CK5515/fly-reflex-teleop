@@ -44,6 +44,15 @@ class LiveViewTest(unittest.TestCase):
         self.assertEqual(self.view.take_throws(), ["gripper", "forearm", "gripper"])
         self.assertEqual(self.view.take_throws(), [])
 
+    def test_mode_is_taken_once_and_bad_modes_are_rejected(self) -> None:
+        self.assertIsNone(self.view.take_mode())
+        self.assertEqual(self.post("/mode?reflex=spectral").status, 204)
+        self.assertEqual(self.view.take_mode(), "spectral")
+        self.assertIsNone(self.view.take_mode())
+        with self.assertRaises(HTTPError) as caught:
+            self.post("/mode?reflex=magic")
+        self.assertEqual(caught.exception.code, 400)
+
     def test_bad_aim_is_rejected(self) -> None:
         for path in ("/throw?aim=cube", "/throw"):
             with self.assertRaises(HTTPError) as caught:

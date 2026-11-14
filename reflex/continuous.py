@@ -71,7 +71,7 @@ class ContinuousReflex:
         for pos, vel in events.objects:
             # Judge from where the operator wants the gripper, not from where the reflex has already
             # moved it: otherwise a successful dodge looks safe and the arm drifts back into the path.
-            urgency, path = looming(pos + self.offset, vel, p["starts"], p["full"], p["reach"])
+            urgency, path = looming(pos + self._shift(), vel, p["starts"], p["full"], p["reach"])
             if urgency == 0.0:
                 continue
             closeness = lambda gap: np.clip(1.0 - gap / p["clear"], 0.0, 1.0)
@@ -79,6 +79,12 @@ class ContinuousReflex:
             gaps = np.linalg.norm(path[None] - self._step(events) * DIRECTIONS[:, None], axis=2).min(1)
             steps += urgency * closeness(gaps)
         return stay, steps, {}
+
+    relative_to_target = False   # True when objects are already measured from the operator's target point
+
+    def _shift(self) -> np.ndarray:
+        """From gripper-relative to target-relative positions."""
+        return np.zeros(3) if self.relative_to_target else self.offset
 
     def _step(self, events: SceneEvents) -> float:
         return self.p["carry_step"] if events.load_on else self.p["step"]
