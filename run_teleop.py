@@ -67,7 +67,7 @@ def main() -> None:
     parser.add_argument("--hand", choices=["left", "right"], default=None, help="which glove steers (default: the first seen)")
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--seconds", type=float, default=0.0, help="stop after this long (0 = until closed)")
-    parser.add_argument("--reflex", choices=["continuous", "spectral", "eye-geometric", "eye-fly", "handwritten", "brain", "none"], default="continuous",
+    parser.add_argument("--reflex", choices=["continuous", "spectral", "eye-geometric", "eye-fly", "handwritten", "brain", "none"], default=None,
                         help="continuous: smooth avoidance by geometry; spectral: the same, with the danger map "
                              "computed by the connectome model; handwritten / brain: the earlier single-jump reflexes")
     parser.add_argument("--eye-noise", choices=["none", "moderate", "heavy"], default="moderate",
@@ -149,6 +149,8 @@ def main() -> None:
         return HandwrittenReflex() if mode == "handwritten" else NoReflex()
 
     mode = args.reflex
+    if mode is None:   # the fly reflex if its fitted model is here, else plain geometric avoidance
+        mode = "eye-fly" if Path(args.eye_model).exists() else "continuous"
     reflex = make_reflex(mode)
     # Outcomes per reflex mode, so modes switched between on the page can be compared.
     scores: dict[str, dict[str, int]] = {}
