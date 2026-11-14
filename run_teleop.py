@@ -89,7 +89,8 @@ def main() -> None:
     if args.throw_every < 0:
         parser.error("--throw-every cannot be negative")
 
-    model = build_model(None if args.load == "none" else args.load, balls=args.volley)
+    model = build_model(None if args.load == "none" else args.load, balls=args.volley,
+                        target_marker=args.source == "mouse")
     carrying = args.load == "tray"
     data = mujoco.MjData(model)
     reset(model, data)

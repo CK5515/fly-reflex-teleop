@@ -38,9 +38,10 @@ def ball_names(model: mujoco.MjModel) -> list[str]:
     return names
 
 
-def build_model(load: str | None = None, balls: int = 1) -> mujoco.MjModel:
+def build_model(load: str | None = None, balls: int = 1, target_marker: bool = False) -> mujoco.MjModel:
     """`load="tray"` fixes a rimless tray to the gripper with a loose ball on it (the thing to keep steady).
-    `balls` is how many balls can be in the air at once."""
+    `balls` is how many balls can be in the air at once. `target_marker` draws a small grey ball where the
+    operator is asking the gripper to be; without it that point is invisible."""
     spec = mujoco.MjSpec.from_file(str(PANDA_XML))
     for key in list(spec.keys):  # the stock keyframe no longer fits once bodies are added
         spec.delete(key)
@@ -85,7 +86,8 @@ def build_model(load: str | None = None, balls: int = 1) -> mujoco.MjModel:
 
     # The pose the operator is asking for. Drag it in the viewer to steer by mouse.
     target = world.add_body(name="target", mocap=True, pos=[0.5, 0, 0.5])
-    target.add_geom(type=BOX, size=[0.02, 0.02, 0.02], rgba=[0.2, 0.6, 1.0, 0.35], contype=0, conaffinity=0)
+    if target_marker:   # only where it must be grabbed: dragging it is how the mouse steers
+        target.add_geom(type=SPHERE, size=[0.012, 0, 0], rgba=[0.8, 0.8, 0.8, 0.5], contype=0, conaffinity=0)
 
     if load == "tray":
         hand = spec.body("hand")
