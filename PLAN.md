@@ -104,7 +104,7 @@ In this order. Hosting comes last, and only if time is left.
    doubled hand-to-arm scale, the tamed wrist rotation, the stronger steadying, the launcher's glove path.
 2. Record a backup video with `python demo.py --no-glove` before changing anything else.
 3. README: what it is, how to install (including fetching the Panda arm model into `third_party/`), how to run, the
-   results with their limits, and the statement that all code was written at the event.
+   results with their limits.
 4. Merge `teleop-sim-and-live-view` into `main`. The submission's source link points at `main`, which is empty.
 5. Pitch video from the two-minute script, filmed with the glove, numbers matched to what is filmed.
 6. Submission form text (drafted in the session: name, punchline, description).

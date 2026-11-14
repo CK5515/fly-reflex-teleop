@@ -1,0 +1,5 @@
+mujoco>=4.0
+numpy
+scipy
+pandas
+pyarrow
