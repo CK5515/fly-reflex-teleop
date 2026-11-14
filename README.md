@@ -2,11 +2,11 @@
 
 Junction 2026, Rokoko teleoperation track.
 
-A motion-capture glove mirrors to a robot what the operator does, but nothing tells the operator gets no feedback from the robot.
+A motion-capture glove mirrors to a robot what the operator does, but the operator gets no feedback from the robot.
 You cannot feel a load sliding and cannot react to an object that suddenly appears in half a second.
 
 This project puts a "reflex layer" that runs in parallel with the regular operator. A person steers a simulated robot arm with a Rokoko glove.
-Meanwhile, the arm keeps what it carries steady and steps out of the way of incoming objects for a brief moment before handing back control. The incoming objects are sensed through the fruit fly's looming circuit, taken from the FlyWire connectome of *Drosophila*.
+Meanwhile, the arm keeps the subject steady and steps out of the way of incoming objects for a brief moment before handing back control. The incoming objects are sensed through the fruit fly's looming circuit, taken from the FlyWire connectome of *Drosophila*.
 
 ## What you see
 
