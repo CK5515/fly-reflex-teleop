@@ -1,5 +1,11 @@
 # Fly Reflex Teleop
 
+<p align="center">
+  <img src="docs/media/hero.gif" width="640" alt="A simulated robot arm carrying a tray with a loose yellow ball leans out of the way of green balls thrown at it, keeping the tray level so the ball stays on.">
+  <br>
+  <sub>The fly reflex dodges thrown balls while keeping the tray level. Simulation, scripted operator, played at 0.8× speed.</sub>
+</p>
+
 Junction 2026, Rokoko teleoperation track.
 
 A motion-capture glove mirrors to a robot what the operator does, but nothing tells the operator gets no feedback from the robot.
