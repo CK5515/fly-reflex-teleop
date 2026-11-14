@@ -1,6 +1,6 @@
 # Fly Reflex Teleop
 
-Junction 2026, Rokoko teleoperation track. All code in this repository was written during the event.
+Junction 2026, Rokoko teleoperation track.
 
 A motion-capture glove tells a robot what the operator does, but nothing tells the operator what the robot feels.
 They cannot feel a load sliding, and cannot react to an object that arrives in half a second.
