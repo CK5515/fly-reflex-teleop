@@ -44,7 +44,7 @@ objects in the air ──► eye ──► fly circuit ──► reflex ──�
 - **Reflex.** The arm eases toward the safest direction along a smooth path. While a load is carried, the tray is
   held level, follows the hand along an acceleration-limited path and leans into every movement so the load stays on.
 
-After fitting the fly circuit is two small matrices... ~ 55,000 numbers. This makes one decision take about a
+After fitting the fly circuit is two small matrices... ~ 60,000 numbers. This makes one decision take about a
 millisecond on a laptop CPU. Perfect for edge AI.
 
 ## Results
