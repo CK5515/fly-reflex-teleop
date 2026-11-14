@@ -31,6 +31,10 @@ class ArmIK:
         self._jacp = np.zeros((3, model.nv))
         self._jacr = np.zeros((3, model.nv))
 
+    def steer(self, site: str) -> None:
+        """Change which point on the arm is steered (between the fingertips, or the tray's centre)."""
+        self.site = self.model.site(site).id
+
     def reset(self, q: np.ndarray) -> None:
         self.q = np.array(q[:ARM_DOFS], dtype=float)
 

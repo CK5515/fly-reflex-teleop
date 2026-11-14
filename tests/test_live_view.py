@@ -53,6 +53,12 @@ class LiveViewTest(unittest.TestCase):
             self.post("/mode?reflex=magic")
         self.assertEqual(caught.exception.code, 400)
 
+    def test_recentre_is_taken_once(self) -> None:
+        self.assertFalse(self.view.take_recentre())
+        self.assertEqual(self.post("/recentre").status, 204)
+        self.assertTrue(self.view.take_recentre())
+        self.assertFalse(self.view.take_recentre())
+
     def test_bad_aim_is_rejected(self) -> None:
         for path in ("/throw?aim=cube", "/throw"):
             with self.assertRaises(HTTPError) as caught:

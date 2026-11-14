@@ -51,8 +51,10 @@ class GloveHand:
         self._group_id: int | None = None
         self._lock = threading.Lock()
         self.frames = 0
+        self._last_frame = 0.0        # when the newest frame arrived (monotonic seconds)
         self._client = RgmpClient(host, port)
         self._client.on_definition = self._on_definition
+        self._client.on_disconnect = self._on_disconnect
         self._client.on_data = self._on_data
         self._client.on_error = lambda e: print(f"glove stream error: {e}", file=sys.stderr)
         self._client.__enter__()
@@ -60,6 +62,16 @@ class GloveHand:
 
     def close(self) -> None:
         self._client.close()
+
+    @property
+    def live(self) -> bool:
+        """Whether frames are arriving: false while the glove is unplugged or the Coil Pro has lost it."""
+        return time.monotonic() - self._last_frame < 0.5
+
+    def _on_disconnect(self, device_id: int) -> None:
+        if device_id == self.device_id:   # unplugged: forget it, so the next glove to announce itself is taken
+            self.device_id = None
+            self._slots = {}
 
     def latest(self, t: float = 0.0) -> HandPose | None:
         with self._lock:
@@ -100,6 +112,7 @@ class GloveHand:
         with self._lock:
             self._pose = pose
             self.frames += 1
+            self._last_frame = time.monotonic()
 
 
 if __name__ == "__main__":

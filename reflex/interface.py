@@ -25,6 +25,7 @@ class SceneEvents:
     objects: list[tuple[np.ndarray, np.ndarray]] = field(default_factory=list)
     sights: list | None = None   # per thrown object, the eye's recent frames (sim.eye.Frame), if an eye is fitted
     touching: frozenset[int] = frozenset()   # which thrown objects are touching the arm right now
+    target_pos: np.ndarray | None = None   # where the operator is asking the gripper to be
     target_acc: np.ndarray = field(default_factory=lambda: np.zeros(3))  # acceleration the operator is asking for, m/s^2
     load_on: bool = False    # something loose is being carried and is still on the tray
     load_pos: np.ndarray = field(default_factory=lambda: np.zeros(2))  # its offset from the tray's centre (x, y), metres

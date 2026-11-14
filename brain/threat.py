@@ -11,7 +11,7 @@ once fitted the whole chain folds into two small matrices: no spectral bases
 are needed at run time. What is learned is one gain per (relation, band) and
 the readout of the descending neurons; the wiring fixes everything else.
 
-    python -m brain.threat                 # fit on the real wiring, save runs/threat/model.npz
+    python -m brain.threat                 # fit on the real wiring, save models/model.npz
     python -m brain.threat --compare       # also fit rewired wiring and a no-brain baseline
 """
 
@@ -273,7 +273,7 @@ def fit_eye(compare: bool, n_scenes: int) -> None:
     show = lambda m: {k: round(v, 3) for k, v in score(m, test_activity, test_target, teacher).items()}
     model = fit(band_operators(circuit), activity, target, blocks=2)
     print("eye input, real wiring:", show(model))
-    out = REPO / "runs" / "threat"
+    out = REPO / "models"
     out.mkdir(parents=True, exist_ok=True)
     np.savez(out / "eye_model.npz", through=model["through"], readout=model["readout"], bias=model["bias"],
              gains=model["gains"], azimuth=retina.azimuth, elevation=retina.elevation)
@@ -305,7 +305,7 @@ def main() -> None:
 
     model = fit(band_operators(circuit), activity, target)
     print("real wiring:", {k: round(v, 3) for k, v in score(model, test_activity, test_target, teacher).items()})
-    out = REPO / "runs" / "threat"
+    out = REPO / "models"
     out.mkdir(parents=True, exist_ok=True)
     np.savez(out / "model.npz", through=model["through"], readout=model["readout"], bias=model["bias"],
              gains=model["gains"], azimuth=retina.azimuth, elevation=retina.elevation)

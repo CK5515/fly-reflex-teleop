@@ -94,6 +94,7 @@
       <div class="stage-bar">
         <span class="label">The glove operator steers. The fly reflex reacts.</span>
         <div class="actions">
+          <button class="button" id="recentre" type="button">Recentre hand<kbd>C</kbd></button>
           <button class="button" id="throwGripper" type="button">Throw at gripper<kbd>T</kbd></button>
           <button class="button" id="throwForearm" type="button">Throw at forearm<kbd>F</kbd></button>
         </div>
@@ -178,7 +179,9 @@ let latest = null;
 
 // ---- who is in control
 function why(s) {
+  if (s.glove === "waiting") return "Waiting for the glove. Plug it in and hold your hand out; the arm will follow from where it is.";
   const steadying = s.carrying && (s.drive.steady || 0) > 0.15;
+  if (s.control === "steady") return "Smoothing the hand's movement and leaning the tray, so the load stays on.";
   if (s.control !== "operator") return "Stepping clear of an object on a collision course" + (steadying ? ", leaning the tray to keep the load on." : ".");
   if (steadying) return "Following the hand, leaning the tray to keep the load on.";
   if (s.ttc !== null) return `An object will pass ${(s.miss * 100).toFixed(0)} cm away in ${s.ttc.toFixed(2)} s.`;
@@ -271,12 +274,15 @@ function throwBall(aim) {
     .then(r => { $("modeNote").textContent = r.ok ? "" : "Throw refused"; })
     .catch(() => { $("modeNote").textContent = "The teleop program is not running"; });
 }
+function recentre() { fetch("/recentre", { method: "POST" }).catch(() => {}); }
+$("recentre").addEventListener("click", recentre);
 $("throwGripper").addEventListener("click", () => throwBall("gripper"));
 $("throwForearm").addEventListener("click", () => throwBall("forearm"));
 addEventListener("keydown", e => {
   if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
   const key = e.key.toLowerCase();
-  if (key === "t") throwBall("gripper");
+  if (key === "c") recentre();
+  else if (key === "t") throwBall("gripper");
   else if (key === "f") throwBall("forearm");
   else if (key === "1") setMode("none");
   else if (key === "2") setMode("eye-geometric");   // the geometric baseline: no button, for comparison only

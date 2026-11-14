@@ -4,7 +4,7 @@ import mujoco
 import numpy as np
 
 from reflex.interface import SceneEvents
-from sim.scene import BALL_PARKED, BALL_RADIUS, TRAY_HALF, ball_names, control_site
+from sim.scene import BALL_PARKED, BALL_RADIUS, TRAY_HALF, ball_names, can_grab, control_site
 
 GRAVITY = np.array([0.0, 0.0, -9.81])
 
@@ -28,15 +28,26 @@ class Senses:
         self.arm_root = model.body_rootid[self.hand]
         self._force = np.zeros(6)
         self._vel = np.zeros(6)
-        self.carrying = control_site(model) == "tray"
-        if self.carrying:
-            self.site = model.site("tray").id       # everything is sensed relative to the tray's centre
+        self.grasp_site, self.site = self.site, self.site
+        self.has_tray = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "tray") >= 0
+        self.paddle_geoms: set[int] = set()
+        if self.has_tray:
+            self.tray_site = model.site("tray").id
             self.load_body = model.body("load").id
             self.load_qvel = model.jnt_dofadr[model.body("load").jntadr[0]]
             self.load_geom = model.geom("load").id
+            if can_grab(model):
+                self.paddle_geoms = {model.geom("tray").id, model.geom("tray_handle").id}
+        self.carrying = False
+        self.carry(control_site(model) == "tray")
         self._target = None            # the operator's target and its smoothed velocity and acceleration
         self._target_vel = np.zeros(3)
         self._target_acc = np.zeros(3)
+
+    def carry(self, carrying: bool) -> None:
+        """Say whether a tray is in the hand. While it is, everything is sensed relative to its centre."""
+        self.carrying = carrying
+        self.site = self.tray_site if carrying else self.grasp_site
 
     def read(self, data: mujoco.MjData) -> SceneEvents:
         m = self.model
@@ -70,6 +81,7 @@ class Senses:
             load = dict(load_on=on, load_pos=offset[:2].copy(),
                         load_vel=(data.qvel[self.load_qvel:self.load_qvel + 3] - hand_vel)[:2].copy())
         return SceneEvents(
+            target_pos=data.mocap_pos[0].copy(),
             target_acc=self._target_acc.copy(),
             **load,
             t=data.time,
@@ -96,7 +108,8 @@ class Senses:
                 other = c.geom1
             else:
                 continue
-            if self.model.body_rootid[self.model.geom_bodyid[other]] != self.arm_root:
+            held = self.carrying and other in self.paddle_geoms     # a paddle in the hand counts as the arm
+            if self.model.body_rootid[self.model.geom_bodyid[other]] != self.arm_root and not held:
                 continue
             mujoco.mj_contactForce(self.model, data, i, self._force)
             total += abs(self._force[0])

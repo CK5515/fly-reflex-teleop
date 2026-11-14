@@ -27,6 +27,7 @@ class LiveView:
         self._throws: list[str] = []
         self._throws_lock = threading.Lock()
         self._mode: str | None = None
+        self._recentre = False
         self._history: deque[tuple[int, str]] = deque(maxlen=HISTORY)
         self._seq = 0
         self._changed = threading.Condition()
@@ -71,6 +72,10 @@ class LiveView:
                         view._mode = mode
                         self.send_response(204)
                         self.end_headers()
+                elif url.path == "/recentre":
+                    view._recentre = True
+                    self.send_response(204)
+                    self.end_headers()
                 elif url.path != "/throw":
                     self.send_error(404)
                 elif aim not in AIMS:
@@ -96,6 +101,11 @@ class LiveView:
         """The reflex mode asked for from the page since the last call, if any."""
         mode, self._mode = self._mode, None
         return mode
+
+    def take_recentre(self) -> bool:
+        """Whether the page asked, since the last call, for the hand's current position to count as home."""
+        asked, self._recentre = self._recentre, False
+        return asked
 
     def close(self) -> None:
         self._server.shutdown()

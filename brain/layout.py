@@ -1,7 +1,7 @@
 """Where the circuit's neurons sit in the brain, for drawing them on the live page.
 
 Positions are the FlyWire annotation coordinates seen from the front (x across, y down), scaled into
-a unit box. Cached as JSON next to the fitted models.
+a unit box. Cached as JSON in models/, next to the fitted models.
 
     python -m brain.layout
 """
@@ -15,7 +15,7 @@ import pandas as pd
 from brain.circuit import FLYWIRE, load
 
 REPO = Path(__file__).resolve().parent.parent
-CACHE = REPO / "runs" / "threat" / "layout.json"
+CACHE = REPO / "models" / "layout.json"
 
 
 def build() -> dict:
