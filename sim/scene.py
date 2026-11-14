@@ -21,14 +21,26 @@ BALL_RADIUS = 0.04
 TRAY_HALF = 0.09          # the tray is a square plate, this far from centre to edge
 TRAY_OFFSET = [0.17, 0.0, 0.09]   # tray centre in the gripper's frame: held out to one side, level at home
 LOAD_RADIUS = 0.02
+HANDLE_HALF_WIDTH = 0.012  # the tray's handle, which the fingers close on
+CARRY_GRIP = 255.0 * HANDLE_HALF_WIDTH / 0.04   # gripper command that brings the fingers onto the handle
 
 BOX = mujoco.mjtGeom.mjGEOM_BOX
 SPHERE = mujoco.mjtGeom.mjGEOM_SPHERE
 PLANE = mujoco.mjtGeom.mjGEOM_PLANE
 
 
-def build_model(load: str | None = None) -> mujoco.MjModel:
-    """`load="tray"` fixes a rimless tray to the gripper with a loose ball on it (the thing to keep steady)."""
+def ball_names(model: mujoco.MjModel) -> list[str]:
+    """Names of the balls that can be thrown: "ball", "ball1", "ball2", ..."""
+    names, i = ["ball"], 1
+    while mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"ball{i}") >= 0:
+        names.append(f"ball{i}")
+        i += 1
+    return names
+
+
+def build_model(load: str | None = None, balls: int = 1) -> mujoco.MjModel:
+    """`load="tray"` fixes a rimless tray to the gripper with a loose ball on it (the thing to keep steady).
+    `balls` is how many balls can be in the air at once."""
     spec = mujoco.MjSpec.from_file(str(PANDA_XML))
     for key in list(spec.keys):  # the stock keyframe no longer fits once bodies are added
         spec.delete(key)
@@ -65,9 +77,11 @@ def build_model(load: str | None = None) -> mujoco.MjModel:
         rgba=[0.9, 0.3, 0.2, 1], friction=[1.5, 0.02, 0.001],
     )
 
-    ball = world.add_body(name="ball", pos=BALL_PARKED)
-    ball.add_freejoint()
-    ball.add_geom(name="ball", type=SPHERE, size=[BALL_RADIUS, 0, 0], mass=0.05, rgba=[0.2, 0.8, 0.3, 1])
+    for i in range(balls):
+        name = "ball" if i == 0 else f"ball{i}"
+        ball = world.add_body(name=name, pos=BALL_PARKED + [0.0, 0.15 * i, 0.0])
+        ball.add_freejoint()
+        ball.add_geom(name=name, type=SPHERE, size=[BALL_RADIUS, 0, 0], mass=0.05, rgba=[0.2, 0.8, 0.3, 1])
 
     # The pose the operator is asking for. Drag it in the viewer to steer by mouse.
     target = world.add_body(name="target", mocap=True, pos=[0.5, 0, 0.5])
@@ -77,6 +91,10 @@ def build_model(load: str | None = None) -> mujoco.MjModel:
         hand = spec.body("hand")
         hand.add_geom(name="tray", type=BOX, pos=TRAY_OFFSET, size=[TRAY_HALF, TRAY_HALF, 0.004],
                       mass=0.1, rgba=[0.85, 0.85, 0.9, 1], friction=[0.6, 0.005, 0.001], condim=6)
+        # A handle from between the fingers to the tray's near edge, so the gripper visibly holds it.
+        reach = TRAY_OFFSET[0] - TRAY_HALF
+        hand.add_geom(name="tray_handle", type=BOX, pos=[reach / 2, 0.0, TRAY_OFFSET[2]],
+                      size=[reach / 2 + 0.005, HANDLE_HALF_WIDTH, 0.006], mass=0.02, rgba=[0.3, 0.3, 0.35, 1])
         # The top face is the gripper's -z side (the gripper points down).
         hand.add_site(name="tray", pos=[TRAY_OFFSET[0], TRAY_OFFSET[1], TRAY_OFFSET[2] - 0.004], size=[0.004, 0.004, 0.004])
         ball = world.add_body(name="load", pos=[0.4, 0.3, 1.0])
@@ -117,5 +135,8 @@ def reset(model: mujoco.MjModel, data: mujoco.MjData) -> None:
     data.mocap_pos[0] = data.site_xpos[site]
     mujoco.mju_mat2Quat(data.mocap_quat[0], data.site_xmat[site])
     if control_site(model) == "tray":
+        data.qpos[7:9] = HANDLE_HALF_WIDTH
+        data.ctrl[7] = CARRY_GRIP
+        mujoco.mj_forward(model, data)
         place_load(model, data)
         mujoco.mj_forward(model, data)
