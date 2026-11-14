@@ -26,7 +26,7 @@ class Steady:
         self._tilt = np.zeros(2)
         self._time = None
 
-    def tilt(self, events: SceneEvents, planned_acc: np.ndarray | None = None) -> np.ndarray:
+    def tilt(self, events: SceneEvents, planned_acc: np.ndarray | None = None, planned_only: bool = False) -> np.ndarray:
         """Lean about the world x and y axes. Leaning by +a about x pushes the load toward -y at g*a;
         leaning by +a about y pushes it toward +x."""
         dt = 0.0 if self._time is None else max(events.t - self._time, 0.0)
@@ -36,7 +36,9 @@ class Steady:
             return self._tilt
         # The acceleration we want the load to have: follow the tray, and return to its centre. The
         # tray's acceleration is what the operator asks for plus whatever the reflex itself has planned.
-        tray_acc = events.target_acc[:2] + (0.0 if planned_acc is None else planned_acc[:2])
+        # (`planned_only`: the plan already includes the operator's motion, smoothed.)
+        asked = np.zeros(2) if planned_only else events.target_acc[:2]
+        tray_acc = asked + (0.0 if planned_acc is None else planned_acc[:2])
         limit = self.max_tilt if planned_acc is None else self.max_tilt_planned
         want = self.lean_into * tray_acc - self.stiffness * events.load_pos - self.damping * events.load_vel
         goal = np.clip(np.array([-want[1], want[0]]) / G, -limit, limit)

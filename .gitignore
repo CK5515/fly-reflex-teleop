@@ -13,3 +13,4 @@ third_party/
 persisted_settings.json
 *.zip
 MORGAN.pdf
+!models/*.npz

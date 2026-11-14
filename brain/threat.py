@@ -11,7 +11,7 @@ once fitted the whole chain folds into two small matrices: no spectral bases
 are needed at run time. What is learned is one gain per (relation, band) and
 the readout of the descending neurons; the wiring fixes everything else.
 
-    python -m brain.threat                 # fit on the real wiring, save runs/threat/model.npz
+    python -m brain.threat                 # fit on the real wiring, save models/model.npz
     python -m brain.threat --compare       # also fit rewired wiring and a no-brain baseline
 """
 
@@ -55,12 +55,15 @@ class Retina:
 
     def encode(self, objects: list[tuple[np.ndarray, float]]) -> np.ndarray:
         """Activity of every detector for objects given as (position relative to the gripper, urgency)."""
+        return self.encode_bearings([(np.arctan2(pos[1], pos[0]), np.arctan2(pos[2], np.hypot(pos[0], pos[1])), urgency)
+                                     for pos, urgency in objects])
+
+    def encode_bearings(self, objects: list[tuple[float, float, float]]) -> np.ndarray:
+        """Activity of every detector for objects given as (azimuth, elevation, urgency)."""
         activity = np.zeros(len(self.cells))
-        for pos, urgency in objects:
+        for azimuth, elevation, urgency in objects:
             if urgency <= 0:
                 continue
-            azimuth = np.arctan2(pos[1], pos[0])
-            elevation = np.arctan2(pos[2], np.hypot(pos[0], pos[1]))
             turn = np.angle(np.exp(1j * (self.azimuth - azimuth)))
             activity += urgency * np.exp(-(turn**2 + (self.elevation - elevation) ** 2) / (2 * TUNING**2))
         return activity
@@ -105,7 +108,8 @@ def scenes(n: int, rng: np.random.Generator, teacher: ContinuousReflex, retina: 
     return activity, target
 
 
-def fit(operators: np.ndarray | None, activity, target, steps: int = 150, seed: int = 0, ridge: float = 1e-3):
+def fit(operators: np.ndarray | None, activity, target, steps: int = 150, seed: int = 0, ridge: float = 1e-3,
+        blocks: int = 1):
     """Fit band gains and the descending-neuron readout. `operators=None` fits a direct map with no brain.
 
     The readout is solved exactly (ridge regression) for whatever the gains are, and the gains are
@@ -116,6 +120,10 @@ def fit(operators: np.ndarray | None, activity, target, steps: int = 150, seed: 
     import torch
     torch.manual_seed(seed)
     x, y = torch.from_numpy(activity).double(), torch.from_numpy(target).double()
+    x = x.reshape(len(x), blocks, -1)   # e.g. detector activity now and a moment ago
+
+    def carry(matrix):   # each block through the wiring, side by side
+        return torch.einsum("nbd,od->nbo", x, matrix).reshape(len(x), -1)
 
     def solve(hidden):
         design = torch.cat([hidden, torch.ones(len(hidden), 1, dtype=hidden.dtype)], dim=1)
@@ -124,26 +132,28 @@ def fit(operators: np.ndarray | None, activity, target, steps: int = 150, seed: 
         return weights, ((design @ weights - y) ** 2).mean()
 
     if operators is None:
-        through, gains = torch.eye(x.shape[1], dtype=x.dtype), None
+        through, gains = torch.eye(x.shape[2], dtype=x.dtype), None
     else:
         ops = torch.from_numpy(operators).double()
         start = torch.exp(-3.0 * torch.arange(BANDS) / BANDS).repeat(len(ops) // BANDS)
-        ops = ops / torch.einsum("e,eod,nd->no", start.double(), ops, x[:512]).std()   # descending activity of order one
+        ops = ops / torch.einsum("e,eod,nd->no", start.double(), ops, x[:512, 0]).std()   # descending activity of order one
         gains = torch.nn.Parameter(start.double())
         optim = torch.optim.Adam([gains], lr=0.03)
         for _ in range(steps):
-            _, loss = solve(x @ torch.einsum("e,eod->od", gains, ops).T)
+            _, loss = solve(carry(torch.einsum("e,eod->od", gains, ops)))
             optim.zero_grad(); loss.backward(); optim.step()
         through = torch.einsum("e,eod->od", gains.detach(), ops)
     with torch.no_grad():
-        weights, _ = solve(x @ through.T)
+        weights, _ = solve(carry(through))
     return dict(through=through.numpy().astype(np.float32), readout=weights[:-1].T.numpy().astype(np.float32),
                 bias=weights[-1].numpy().astype(np.float32), gains=None if gains is None else gains.detach().numpy())
 
 
 def score(model: dict, activity, target, teacher: ContinuousReflex) -> dict:
     """How well a fitted model matches the geometric danger map on scenes it was not fitted on."""
-    predicted = activity @ model["through"].T @ model["readout"].T + model["bias"]
+    blocks = model["readout"].shape[1] // model["through"].shape[0]
+    carried = (activity.reshape(len(activity), blocks, -1) @ model["through"].T).reshape(len(activity), -1)
+    predicted = carried @ model["readout"].T + model["bias"]
     explained = 1 - ((predicted - target) ** 2).sum() / ((target - target.mean(0)) ** 2).sum()
     threatened = target[:, 0] > 0.3
     chosen = predicted[threatened, 1:].argmin(1)
@@ -178,11 +188,114 @@ class SpectralThreatReflex(ContinuousReflex):
         return float(danger[0]), danger[1:], detail
 
 
+def eye_urgency(tau: float, p: dict) -> float:
+    return float(np.clip((p["starts"] - tau) / (p["starts"] - p["full"]), 0.0, 1.0))
+
+
+def eye_activity(retina: Retina, sights, now: float, p: dict) -> np.ndarray:
+    """Detector activity now and a moment ago, from the eye's frames alone: [2 * detectors].
+
+    Each approaching ball excites the detectors looking its way, in proportion to how soon it will
+    arrive (apparent size over its growth rate). Two moments let the readout tell which way a ball is
+    drifting across the visual field.
+    """
+    from reflex.eye import looming_cue
+    latest, earlier = [], []
+    for frames in sights:
+        cue = looming_cue(frames, now)
+        if cue is None:
+            continue
+        tau, new, old = cue
+        urgency = eye_urgency(tau, p)
+        latest.append((new.azimuth, new.elevation, urgency))
+        earlier.append((old.azimuth, old.elevation, urgency))
+    return np.r_[retina.encode_bearings(latest), retina.encode_bearings(earlier)]
+
+
+def eye_scenes(n: int, rng: np.random.Generator, teacher: ContinuousReflex, retina: Retina, radius: float = 0.04):
+    """Random moments from random throws as the eye would have seen them, with a random amount of
+    sensor noise, and the true danger of each direction (from the exact flight) to learn."""
+    from sim.eye import NOISE, see
+    gravity = np.array([0.0, 0.0, -9.81])
+    interval, delay, memory = 1 / 60, 1 / 60, 12
+    heavy = NOISE["heavy"]
+    activity = np.zeros((n, 2 * len(retina.cells)), np.float32)
+    target = np.zeros((n, 1 + N_DIRECTIONS), np.float32)
+    for i in range(n):
+        scale = rng.uniform(0.0, 1.0)
+        objects, sights = [], []
+        for _ in range(rng.integers(1, 4)):
+            aim = rng.normal(0.0, 0.10, 3)
+            angle = rng.uniform(-1.2, 1.2)
+            start = np.array([1.5 * np.cos(angle), 1.5 * np.sin(angle), rng.uniform(0.0, 0.4)])
+            flight = rng.uniform(0.5, 0.8)
+            velocity = (aim - start - 0.5 * gravity * flight**2) / flight
+            t = rng.uniform(0.0, flight)
+            at = lambda s: start + velocity * s + 0.5 * gravity * s * s
+            objects.append((at(t), velocity + gravity * t))
+            times = t - delay - interval * np.arange(memory)[::-1] - rng.uniform(0, interval)
+            sights.append([see(s - t, at(s), radius, scale * heavy[0], scale * heavy[1], rng) for s in times if s >= 0])
+        events = SceneEvents(t=0.0, gripper_pos=np.zeros(3), object_pos=objects[0][0], object_vel=objects[0][1],
+                             object_radius=radius, contact_force=0.0, objects=objects)
+        stay, steps, _ = teacher.danger(events)
+        target[i, 0], target[i, 1:] = stay, steps
+        activity[i] = eye_activity(retina, sights, 0.0, teacher.p)
+    return activity, target
+
+
+class EyeFlyReflex(ContinuousReflex):
+    """Continuous avoidance from the eye alone, through the fly's looming circuit: no distances,
+    no velocities, no flight fitting."""
+
+    relative_to_target = True
+
+    def __init__(self, model_path: str | Path, **kwargs):
+        super().__init__(**kwargs)
+        z = np.load(model_path)
+        self.through, self.readout, self.bias = z["through"], z["readout"], z["bias"]
+        self.retina = Retina.__new__(Retina)
+        self.retina.cells, self.retina.azimuth, self.retina.elevation = np.arange(len(z["azimuth"])), z["azimuth"], z["elevation"]
+
+    def danger(self, events: SceneEvents) -> tuple[float, np.ndarray, dict]:
+        detectors = eye_activity(self.retina, events.sights or [], events.t, self.p)
+        if not detectors.any():
+            return 0.0, np.zeros(N_DIRECTIONS), {"detectors": 0.0}
+        descending = (detectors.reshape(2, -1) @ self.through.T).ravel()
+        danger = np.maximum(self.readout @ descending + self.bias, 0.0)
+        return float(danger[0]), danger[1:], {"detectors": float(detectors.sum())}
+
+
+def fit_eye(compare: bool, n_scenes: int) -> None:
+    circuit = load(20, 2, 1)
+    retina, teacher, rng = Retina(circuit), ContinuousReflex(), np.random.default_rng(0)
+    activity, target = eye_scenes(n_scenes, rng, teacher, retina)
+    test_activity, test_target = eye_scenes(4000, rng, teacher, retina)
+    show = lambda m: {k: round(v, 3) for k, v in score(m, test_activity, test_target, teacher).items()}
+    model = fit(band_operators(circuit), activity, target, blocks=2)
+    print("eye input, real wiring:", show(model))
+    out = REPO / "models"
+    out.mkdir(parents=True, exist_ok=True)
+    np.savez(out / "eye_model.npz", through=model["through"], readout=model["readout"], bias=model["bias"],
+             gains=model["gains"], azimuth=retina.azimuth, elevation=retina.elevation)
+    print(f"saved {out / 'eye_model.npz'}")
+    if compare:
+        rewired = fit(band_operators(load(20, 2, 1, shuffle=1)), activity, target, blocks=2)
+        print("eye input, rewired wiring:", show(rewired))
+        direct = fit(None, activity, target, blocks=2)
+        print("eye input, no brain:", show(direct))
+        np.savez(out / "eye_model_nobrain.npz", through=direct["through"], readout=direct["readout"], bias=direct["bias"],
+                 azimuth=retina.azimuth, elevation=retina.elevation)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--compare", action="store_true", help="also fit rewired wiring and a no-brain baseline")
     parser.add_argument("--scenes", type=int, default=20000)
+    parser.add_argument("--eye", action="store_true", help="fit the eye-only model (bearing and apparent size, no distances)")
     args = parser.parse_args()
+    if args.eye:
+        fit_eye(args.compare, args.scenes)
+        return
     circuit = load(20, 2, 1)
     retina, teacher, rng = Retina(circuit), ContinuousReflex(), np.random.default_rng(0)
     activity, target = scenes(args.scenes, rng, teacher, retina)
@@ -192,7 +305,7 @@ def main() -> None:
 
     model = fit(band_operators(circuit), activity, target)
     print("real wiring:", {k: round(v, 3) for k, v in score(model, test_activity, test_target, teacher).items()})
-    out = REPO / "runs" / "threat"
+    out = REPO / "models"
     out.mkdir(parents=True, exist_ok=True)
     np.savez(out / "model.npz", through=model["through"], readout=model["readout"], bias=model["bias"],
              gains=model["gains"], azimuth=retina.azimuth, elevation=retina.elevation)

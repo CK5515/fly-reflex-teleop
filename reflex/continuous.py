@@ -53,6 +53,8 @@ class ContinuousReflex:
         carry_step: float = 0.24,    # a shorter step when carrying, metres
         carry_acc: float = 6.0,      # and no harder than this, m/s^2: about what leaning the tray can cancel
         acc_smoothing: float = 0.05,  # seconds over which the acceleration builds up (the lean needs time too)
+        handling_quickness: float = 11.0,  # how fast a carried tray follows the hand, rad/s
+        handling_acc: float = 4.0,   # the hardest a carried tray is allowed to accelerate, m/s^2
         stay_bias: float = 0.15,     # reluctance to move away from the middle of the workspace
         stickiness: float = 0.15,    # reluctance to change direction once moving
     ):
@@ -62,6 +64,9 @@ class ContinuousReflex:
         self.velocity = np.zeros(3)
         self.acceleration = np.zeros(3)
         self.choice: int | None = None
+        self.lag = np.zeros(3)            # how far the smoothed tray target trails the hand's target
+        self.lag_velocity = np.zeros(3)
+        self._target: np.ndarray | None = None
         self._time: float | None = None
 
     def danger(self, events: SceneEvents) -> tuple[float, np.ndarray, dict]:
@@ -71,7 +76,7 @@ class ContinuousReflex:
         for pos, vel in events.objects:
             # Judge from where the operator wants the gripper, not from where the reflex has already
             # moved it: otherwise a successful dodge looks safe and the arm drifts back into the path.
-            urgency, path = looming(pos + self.offset, vel, p["starts"], p["full"], p["reach"])
+            urgency, path = looming(pos + self._shift(), vel, p["starts"], p["full"], p["reach"])
             if urgency == 0.0:
                 continue
             closeness = lambda gap: np.clip(1.0 - gap / p["clear"], 0.0, 1.0)
@@ -79,6 +84,12 @@ class ContinuousReflex:
             gaps = np.linalg.norm(path[None] - self._step(events) * DIRECTIONS[:, None], axis=2).min(1)
             steps += urgency * closeness(gaps)
         return stay, steps, {}
+
+    relative_to_target = False   # True when objects are already measured from the operator's target point
+
+    def _shift(self) -> np.ndarray:
+        """From gripper-relative to target-relative positions."""
+        return np.zeros(3) if self.relative_to_target else self.offset
 
     def _step(self, events: SceneEvents) -> float:
         return self.p["carry_step"] if events.load_on else self.p["step"]
@@ -93,7 +104,7 @@ class ContinuousReflex:
             self.choice, goal = None, np.zeros(3)
         else:
             # Prefer directions that keep the arm near the middle of its workspace, and the current one.
-            outward = (events.gripper_pos[:2] - self.offset[:2] - WORKSPACE_CENTRE) / self._step(events)
+            outward = (events.gripper_pos[:2] - self.offset[:2] - self.lag[:2] - WORKSPACE_CENTRE) / self._step(events)
             cost = steps + p["stay_bias"] * (DIRECTIONS[:, :2] @ outward)
             if self.choice is not None:
                 cost[self.choice] -= p["stickiness"]
@@ -114,12 +125,38 @@ class ContinuousReflex:
         self.velocity = self.velocity + acceleration * dt
         self.offset = self.offset + self.velocity * dt
 
-        moving = float(np.linalg.norm(self.offset)) > 0.02
-        command = ReflexCommand("escape" if moving else None, 1.0 if moving else 0.0, self.offset.copy(),
+        # While a load is carried, the tray does not copy the hand's every jerk: it follows the hand
+        # through a smooth, acceleration-limited path, so the lean always knows what is coming.
+        handling = np.zeros(3)
+        if events.load_on and events.target_pos is not None:
+            if self._target is None:
+                self._target = events.target_pos.copy()
+            hand_step = events.target_pos - self._target      # how far the hand's target just moved
+            self._target = events.target_pos.copy()
+            self.lag -= hand_step                              # the smoothed target stays put; the hand moved on
+            hw = p["handling_quickness"]
+            handling = -hw * hw * self.lag - 2 * hw * self.lag_velocity
+            size = np.linalg.norm(handling)
+            if size > p["handling_acc"]:
+                handling *= p["handling_acc"] / size
+            self.lag_velocity = self.lag_velocity + handling * dt
+            self.lag = self.lag + self.lag_velocity * dt
+            if np.linalg.norm(self.lag) > 0.25:                # never trail the hand by more than this
+                self.lag *= 0.25 / np.linalg.norm(self.lag)
+        else:
+            self.lag[:] = 0.0
+            self.lag_velocity[:] = 0.0
+            self._target = None
+
+        dodging = float(np.linalg.norm(self.offset)) > 0.02
+        holding_back = float(np.linalg.norm(self.lag)) > 0.03
+        expert = "escape" if dodging else "steady" if holding_back else None
+        command = ReflexCommand(expert, 1.0 if expert else 0.0, self.offset + self.lag,
                                 {"escape": 2.0 * min(stay, 1.0)}, detail=detail)
-        command.planned_acc = acceleration
+        command.planned_acc = acceleration + handling
         if events.load_on:
             command.level = True
-            command.tilt = self.steady.tilt(events, acceleration)   # also while braking at the end of a dodge
+            # The tray's whole motion is planned here (smoothed hand + dodge), so lean into exactly that.
+            command.tilt = self.steady.tilt(events, command.planned_acc, planned_only=True)
             command.activations["steady"] = float(np.abs(command.tilt).max() / self.steady.max_tilt * 2)
         return command
