@@ -134,9 +134,35 @@ cd ../..
 
 ## Sources
 
-- Connectome: FlyWire, release 783 (Zenodo record 10676866), and the FlyWire neuron annotations.
-- Arm model: Franka Emika Panda from MuJoCo Menagerie. Simulator: MuJoCo.
-- Motion capture: Rokoko Smartgloves II, Coil Pro and Device SDK.
-- The masked-reconstruction wiring test follows the idea of MORGaN (Occhetta et al., 2025).
+Connectome and biology
+
+- Dorkenwald, S. et al. (2024). Neuronal wiring diagram of an adult brain. *Nature* 634, 124–138.
+  [doi:10.1038/s41586-024-07558-y](https://doi.org/10.1038/s41586-024-07558-y). The FlyWire connectome.
+- Schlegel, P. et al. (2024). Whole-brain annotation and multi-connectome cell typing of *Drosophila*. *Nature* 634,
+  139–152. [doi:10.1038/s41586-024-07686-5](https://doi.org/10.1038/s41586-024-07686-5). The neuron annotations
+  (cell types, sides, positions), from [flyconnectome/flywire_annotations](https://github.com/flyconnectome/flywire_annotations).
+- Eckstein, N. et al. (2024). Neurotransmitter classification from electron microscopy images at synaptic sites in
+  *Drosophila melanogaster*. *Cell* 187, 2574–2594. [doi:10.1016/j.cell.2024.03.016](https://doi.org/10.1016/j.cell.2024.03.016).
+  The per-connection neurotransmitter probabilities that split the wiring into relations.
+- Klapoetke, N. C. et al. (2017). Ultra-selective looming detection from radial motion opponency. *Nature* 551,
+  237–241. [doi:10.1038/nature24626](https://doi.org/10.1038/nature24626). LPLC2 as looming detectors that feed
+  the giant fibre escape pathway.
+- Data: FlyWire whole-brain connectome connectivity data, release 783,
+  [Zenodo record 10676866](https://zenodo.org/records/10676866), CC BY 4.0.
+
+Simulation and hardware
+
+- Todorov, E., Erez, T. and Tassa, Y. (2012). MuJoCo: A physics engine for model-based control. *IEEE/RSJ IROS*,
+  5026–5033. [doi:10.1109/IROS.2012.6386109](https://doi.org/10.1109/IROS.2012.6386109).
+- Zakka, K., Tassa, Y. and MuJoCo Menagerie Contributors (2022). MuJoCo Menagerie: A collection of high-quality
+  simulation models for MuJoCo. [github.com/google-deepmind/mujoco_menagerie](https://github.com/google-deepmind/mujoco_menagerie).
+  The Franka Emika Panda arm model.
+- Rokoko Smartgloves II, Coil Pro and Device SDK, [sdk.rokoko.com](https://sdk.rokoko.com/).
+
+Method
+
+- Occhetta, M., Mudaliar, M., Myatt, A. and Bessant, C. (2025). MORGaN: self-supervised multi-relational graph
+  learning for druggable gene discovery. bioRxiv. [doi:10.1101/2025.09.10.675402](https://doi.org/10.1101/2025.09.10.675402).
+  The masked-reconstruction test of the wiring, over several relation types, follows this idea.
 
 MIT licence.
