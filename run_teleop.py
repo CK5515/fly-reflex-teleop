@@ -130,14 +130,14 @@ def main() -> None:
     retarget = Retarget(home_pos, home_quat, floor=floor)
     if args.source == "glove":
         from mocap.calibrate import load_calibration
-        calibration = load_calibration()
-        if calibration is None:
-            print("no glove calibration found: run `python -m mocap.calibrate` first, or the arm will move the wrong way")
-        else:
-            # A small hand movement moves the arm twice as far, so it can be steered from a rested elbow.
-            # Wrist tipping is halved and capped at 25 degrees, and wrist twist is ignored.
-            retarget = Retarget(home_pos, home_quat, frame=calibration["frame"], turn_frame=calibration["turn_frame"],
-                                floor=floor, scale=args.hand_scale, tilt_scale=0.5, max_tilt=np.radians(25), follow_yaw=False)
+        calibration = load_calibration() or {"frame": None, "turn_frame": None}
+        if calibration["frame"] is None:
+            print("no glove calibration found: run `python -m mocap.calibrate` first (or Recalibrate glove on the page), "
+                  "or the arm will move the wrong way")
+        # A small hand movement moves the arm twice as far, so it can be steered from a rested elbow.
+        # Wrist tipping is halved and capped at 25 degrees, and wrist twist is ignored.
+        retarget = Retarget(home_pos, home_quat, frame=calibration["frame"], turn_frame=calibration["turn_frame"],
+                            floor=floor, scale=args.hand_scale, tilt_scale=0.5, max_tilt=np.radians(25), follow_yaw=False)
 
     if args.source == "scripted":
         source = (waiter_script(args.wobble) if carrying else grab_script(home_pos, data, model, args.wobble) if grabbable
@@ -197,7 +197,8 @@ def main() -> None:
     reflex = make_reflex(mode)
     # Outcomes per reflex mode, so modes switched between on the page can be compared.
     scores: dict[str, dict[str, int]] = {}
-    score = lambda m: scores.setdefault(m, {"throws": 0, "hits": 0, "drops": 0})
+    # "carried" counts the steps a load was carried in that mode, so the page shows drops only where there could be some.
+    score = lambda m: scores.setdefault(m, {"throws": 0, "hits": 0, "drops": 0, "carried": 0})
     thrown_in: dict[int, str] = {}   # ball -> the mode that was active when it was thrown
     score(mode)
     rng = np.random.default_rng(args.seed)
@@ -208,6 +209,8 @@ def main() -> None:
     grabs = 0
     glove_state = "waiting" if args.source == "glove" else "none"   # none: no glove in use
     home_hand_quat = data.xquat[model.body("hand").id].copy()
+    calibrating = None     # the glove calibration started from the page, while it runs and until its result is applied
+    finished_calibration, finished_at = None, 0.0   # its outcome, shown on the page for a few seconds afterwards
     pinched = False        # whether the hand was pinched on the last step (carrying: a pinch throws a ball)
     highest = 0.0
     next_throw = args.throw_every
@@ -284,13 +287,24 @@ def main() -> None:
                 data.qvel[v:v + 6] = 0
 
     def step() -> None:
-        nonlocal highest, next_throw, hits, fired, in_control, steps, drops, off_since, last_hit, last_dodge, load_state, cause, mode, reflex, pinched, carrying, grabs, glove_state
+        nonlocal highest, next_throw, hits, fired, in_control, steps, drops, off_since, last_hit, last_dodge, load_state, cause, mode, reflex, pinched, carrying, grabs, glove_state, calibrating, finished_calibration, finished_at
         if view is not None:
             for aim in view.take_throws():  # asked for from the page
                 throw(aim)
             if view.take_recentre():   # the hand's current position becomes "arm at home"
                 retarget.recalibrate()
                 print(f"[{data.time:6.2f} s] recentred on the hand")
+            for asked in view.take_calibration():
+                if asked == "start" and args.source != "glove":
+                    print(f"[{data.time:6.2f} s] no glove to calibrate: start with --source glove")
+                elif asked == "start" and (calibrating is None or not calibrating.running):
+                    from mocap.calibrate import PageCalibration
+                    calibrating = PageCalibration(source)
+                    print(f"[{data.time:6.2f} s] glove calibration started from the page; the arm holds still")
+                elif asked == "ready" and calibrating is not None:
+                    calibrating.ready()
+                elif asked == "cancel" and calibrating is not None:
+                    calibrating.cancel()
             wanted = view.take_mode()
             if wanted is not None and wanted != mode:
                 try:
@@ -312,9 +326,21 @@ def main() -> None:
             if not launch(queued[0][1]):
                 break  # keep the request queued until a ball has completed its flight
             queued.pop(0)
+        if calibrating is not None and not calibrating.running:   # finished: use the new axes if it saved them
+            result = calibrating.snapshot()["result"]
+            if result == "saved":
+                from mocap.calibrate import load_calibration
+                fresh = load_calibration()
+                retarget.set_frames(fresh["frame"], fresh["turn_frame"])
+            retarget.home_pos = data.mocap_pos[0].copy()   # the hand moved about meanwhile: carry on from where the arm is
+            retarget.recalibrate()
+            print(f"[{data.time:6.2f} s] glove calibration {result}")
+            finished_calibration, finished_at, calibrating = calibrating.snapshot(), data.time, None
         if source is not None:
             hand = source.latest(data.time)
-            if not getattr(source, "live", True):   # glove unplugged or out of range: hold the arm where it is
+            if calibrating is not None:   # the hand is busy with the calibration's movements: hold the arm still
+                hand = None
+            elif not getattr(source, "live", True):   # glove unplugged or out of range: hold the arm where it is
                 hand = None
                 if glove_state != "waiting":
                     glove_state = "waiting"
@@ -372,7 +398,9 @@ def main() -> None:
                 "throws": throws,
                 "hits": hits,
                 "mode": mode,
-                "glove": glove_state,
+                "glove": "calibrating" if calibrating is not None else glove_state,
+                "calibration": (calibrating.snapshot() if calibrating is not None else
+                                finished_calibration if data.time - finished_at < 8 else None),
                 **neuron_activity(events),
                 "carrying": carrying,
                 "scores": scores,
@@ -385,6 +413,7 @@ def main() -> None:
         data.ctrl[:7] = ik.step(data.mocap_pos[0] + command.gain * command.offset, quat)
         mujoco.mj_step(model, data)
         if carrying:
+            score(mode)["carried"] += 1
             # A load off the tray for half a second counts as dropped, once. It is put back only when
             # things are calm, so one drop is not counted again while the tray is still mid-dodge.
             if events.touching or senses.load_struck(data):

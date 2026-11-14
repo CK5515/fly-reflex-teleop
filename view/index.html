@@ -13,10 +13,10 @@
     --surface: #151515;
     --line: #2a2a2a;
     --text: #f2f2f2;
-    --muted: #9a9a9a;
-    --quiet: #666;
-    /* The only colour on the page is in the two artworks. */
-    --glove: #ff3b30;     /* the glove's sensors */
+    --muted: #b8b8b8;
+    --quiet: #8c8c8c;
+    /* The only colour on the page is the fly's: in its artwork, and in its neurons when they fire. */
+    --glove: #ffffff;     /* the glove's sensors */
     --fly-eye: #ff3b30;   /* Drosophila's red eyes */
     --fly-body: #e9a23b;
     --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
@@ -24,77 +24,137 @@
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
-  body { margin: 0; background: var(--page); color: var(--text); font: 14px/1.5 var(--sans); }
+  body { margin: 0; background: var(--page); color: var(--text); font: 16px/1.5 var(--sans); }
   button { font: inherit; color: inherit; }
-  .label { color: var(--quiet); font: 10px/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+  .label { color: var(--quiet); font: 12px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 
   .shell { min-height: 100%; max-width: 1560px; margin: 0 auto; padding: 0 28px 20px; display: flex; flex-direction: column; }
-  header { height: 56px; flex: none; display: flex; align-items: center; justify-content: space-between; }
-  .wordmark { font-size: 13px; font-weight: 700; letter-spacing: .18em; }
+  header { flex: none; padding: 18px 0 16px; display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 28px; }
+  .wordmark { font-size: 15px; font-weight: 700; letter-spacing: .18em; white-space: nowrap; }
   .wordmark span { margin-left: 12px; color: var(--quiet); font-weight: 400; letter-spacing: .08em; }
+  .pitch { flex: 1 1 320px; margin: 0; font-size: 20px; line-height: 1.3; color: var(--muted); }
+  .pitch b { color: var(--text); font-weight: 600; }
+  /* Whether the glove is being tracked: white when it is, pulsing amber while it is being looked for. */
+  .glove { margin-left: auto; display: flex; align-items: center; gap: 9px; padding: 6px 14px; border: 1px solid #444; border-radius: 18px;
+           font-size: 15px; color: var(--muted); white-space: nowrap; }
+  .glove::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--quiet); }
+  .glove.live { color: var(--text); }
+  .glove.live::before { background: var(--text); box-shadow: 0 0 8px rgba(255, 255, 255, .7); }
+  .glove.waiting { color: var(--fly-body); border-color: var(--fly-body); }
+  .glove.waiting::before { background: var(--fly-body); animation: seek 1s ease-in-out infinite alternate; }
+  .glove.calibrating::before { background: var(--text); animation: seek 1s ease-in-out infinite alternate; }
+  @keyframes seek { from { opacity: .25; } to { opacity: 1; } }
 
-  main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 20px; }
+  main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 480px; gap: 24px; }
   .stage { min-height: 0; display: flex; flex-direction: column; gap: 12px; }
-  #scene { flex: 1; min-height: 420px; width: 100%; border: 0; border-radius: 10px; background: #111; }
-  .stage-bar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  .actions { display: flex; gap: 8px; }
-  .button { height: 34px; padding: 0 14px; background: transparent; border: 1px solid var(--line); border-radius: 17px;
+  .scene-wrap { flex: 1; min-height: 420px; position: relative; display: flex; }
+  #scene { flex: 1; min-height: 0; width: 100%; border: 0; border-radius: 10px; background: #111; }
+  /* While the fly reflex is dodging, the 3D view wears an amber ring; the moment it takes over, the ring flashes. */
+  .scene-wrap::after { content: ""; position: absolute; inset: 0; border-radius: 10px; pointer-events: none; opacity: 0;
+                       box-shadow: inset 0 0 0 4px var(--fly-body), inset 0 0 70px rgba(233, 162, 59, .4); transition: opacity .6s; }
+  .scene-wrap.reflex::after { opacity: 1; transition: opacity .05s; }
+  .scene-wrap.flash::after { animation: takeover .7s ease-out; }
+  @keyframes takeover {
+    from { box-shadow: inset 0 0 0 8px var(--fly-body), inset 0 0 220px rgba(233, 162, 59, .85); }
+    to   { box-shadow: inset 0 0 0 4px var(--fly-body), inset 0 0 70px rgba(233, 162, 59, .4); }
+  }
+  .takeover { position: absolute; top: 16px; left: 16px; padding: 7px 14px; border-radius: 18px; pointer-events: none;
+              background: var(--fly-body); color: #1a1205; font-weight: 700; font-size: 15px; letter-spacing: .06em;
+              text-transform: uppercase; opacity: 0; transition: opacity .6s; }
+  .scene-wrap.reflex .takeover { opacity: 1; transition: opacity .05s; }
+  .stage-bar { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .button { height: 42px; padding: 0 18px; background: transparent; border: 1px solid #444; border-radius: 21px;
             cursor: pointer; transition: border-color .15s, color .15s; }
   .button:hover { border-color: var(--muted); }
   .button:active { transform: translateY(1px); }
   .button:focus-visible, .mode:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
-  kbd { margin-left: 8px; color: var(--quiet); font: 10px var(--mono); }
+  .button.primary { background: var(--text); border-color: var(--text); color: var(--page); font-weight: 600; }
+  .button.primary kbd { color: #555; }
+  .button[hidden] { display: none; }
 
-  aside { min-height: 0; display: flex; flex-direction: column; gap: 22px; }
+  /* The glove calibration, run from the page: one instruction at a time, over the 3D view. */
+  .calib { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(600px, calc(100% - 32px));
+           padding: 22px 24px; display: flex; flex-direction: column; gap: 10px; border: 1px solid #444; border-radius: 12px;
+           background: rgba(12, 12, 12, .94); box-shadow: 0 10px 40px rgba(0, 0, 0, .6); }
+  .calib[hidden] { display: none; }
+  .calib-say { margin: 0; font-size: 24px; line-height: 1.3; font-weight: 600; }
+  .calib-detail { min-height: 21px; margin: 0; color: var(--muted); font: 14px/1.5 var(--mono); }
+  .calib-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  kbd { margin-left: 8px; color: var(--quiet); font: 12px var(--mono); }
+
+  aside { min-height: 0; display: flex; flex-direction: column; gap: 20px; }
+  aside > section { flex: none; }
   .authority { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; padding-top: 4px; }
-  .who { margin-top: 6px; font-size: 30px; font-weight: 600; letter-spacing: -.04em; line-height: 1.1; white-space: nowrap; }
-  .why { min-height: 62px; margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+  .who { margin-top: 6px; font-size: 40px; font-weight: 600; letter-spacing: -.04em; line-height: 1.1; white-space: nowrap; }
+  .why { min-height: 52px; margin: 8px 0 0; color: var(--muted); font-size: 17px; line-height: 1.4; }
   .cast { grid-row: 1 / span 2; grid-column: 2; display: flex; gap: 6px; align-items: center; }
-  .cast svg { width: 64px; height: 64px; filter: grayscale(1); opacity: .28; }
+  .cast svg { width: 76px; height: 76px; filter: grayscale(1); opacity: .4; transition: opacity .12s; }
   .cast svg.on { filter: none; opacity: 1; }
-  .meter { grid-column: 1 / -1; height: 2px; margin-top: 10px; background: var(--line); border-radius: 1px; overflow: hidden; }
-  .meter > div { height: 100%; width: 0; background: var(--text); }
+  .meter { grid-column: 1 / -1; height: 4px; margin-top: 10px; background: var(--line); border-radius: 1px; overflow: hidden; }
+  .meter > div { height: 100%; width: 0; background: var(--fly-body); }
 
-  .brain { display: flex; flex-direction: column; gap: 8px; }
+  aside > .brain { flex: 1 1 300px; min-height: 300px; display: flex; flex-direction: column; gap: 8px; }
   .brain-head { display: flex; justify-content: space-between; align-items: baseline; }
-  #brain { display: block; width: 100%; aspect-ratio: 400 / 250; background: var(--surface); border-radius: 10px; }
+  #brainNote.firing { color: var(--fly-body); }
+  .brain-box { flex: 1; min-height: 0; position: relative; background: #101010; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+               transition: border-color .12s; }
+  .brain-box.firing { border-color: var(--fly-body); }
+  #brain { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   .legend { display: flex; justify-content: space-between; }
   .brain[hidden] { display: none; }
 
   .modes { display: grid; grid-template-columns: repeat(2, 1fr); padding: 3px; margin-top: 8px; background: var(--surface); border-radius: 10px; }
-  .mode { height: 38px; background: transparent; border: 0; border-radius: 8px; color: var(--muted); cursor: pointer; transition: background .15s, color .15s; }
+  .mode { height: 46px; font-size: 17px; background: transparent; border: 0; border-radius: 8px; color: var(--muted); cursor: pointer; transition: background .15s, color .15s; }
   .mode:hover { color: var(--text); }
   .mode.on { background: var(--text); color: var(--page); font-weight: 600; }
-  .mode-note { min-height: 16px; margin-top: 6px; }
+  .mode-note { min-height: 17px; margin-top: 6px; }
 
   table { width: 100%; margin-top: 4px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   th { padding: 6px 0; text-align: right; font-weight: 400; }
-  td { padding: 9px 0; text-align: right; border-top: 1px solid var(--line); color: var(--muted); }
+  td { padding: 8px 0; text-align: right; border-top: 1px solid var(--line); color: var(--muted); font-size: 17px; }
   th:first-child, td:first-child { text-align: left; }
   tr.on td { color: var(--text); }
   tr.on td:first-child::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 8px; border-radius: 50%; background: var(--text); vertical-align: 2px; }
-  td.big { font-size: 18px; color: var(--text); }
+  td.big { font-size: 30px; line-height: 1.15; font-weight: 600; color: var(--text); }
+  td.big small { margin-left: 5px; font-size: 15px; font-weight: 400; color: var(--muted); }
+  .score-hint { min-height: 22px; margin: 8px 0 0; color: var(--muted); font-size: 15px; }
 
   @media (max-width: 1000px) {
     main { grid-template-columns: 1fr; }
-    #scene { min-height: 56vw; }
+    .scene-wrap { min-height: 56vw; }
   }
-  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  @media (prefers-reduced-motion: reduce) { *, *::after { transition: none !important; animation: none !important; } }
 </style>
 </head>
 <body>
 <div class="shell">
   <header>
     <div class="wordmark">FLY REFLEX<span>Junction 2026</span></div>
+    <p class="pitch"><b>Use the glove to steer the robot arm.</b> A fruit fly's escape circuit steadies what you carry and dodges what is thrown at it.</p>
+    <div class="glove" id="glove" role="status">Connecting</div>
   </header>
 
   <main>
     <section class="stage" id="sceneCard">
-      <iframe id="scene" title="Live 3D simulation of the teleoperated robot arm" credentialless allow="cross-origin-isolated"></iframe>
+      <div class="scene-wrap" id="sceneWrap">
+        <iframe id="scene" title="Live 3D simulation of the teleoperated robot arm" credentialless allow="cross-origin-isolated"></iframe>
+        <div class="takeover" aria-hidden="true">Fly reflex in control</div>
+        <div class="calib" id="calib" role="dialog" aria-labelledby="calibTitle" aria-live="polite" hidden>
+          <div class="label" id="calibTitle">Glove calibration</div>
+          <p class="calib-say" id="calibSay"></p>
+          <p class="calib-detail" id="calibDetail"></p>
+          <div class="calib-actions">
+            <button class="button primary" id="calibReady" type="button" hidden>I'm there<kbd>Enter</kbd></button>
+            <button class="button" id="calibCancel" type="button" hidden>Cancel<kbd>Esc</kbd></button>
+            <button class="button" id="calibClose" type="button" hidden>Close<kbd>Esc</kbd></button>
+          </div>
+        </div>
+      </div>
       <div class="stage-bar">
-        <span class="label">The glove operator steers. The fly reflex reacts.</span>
         <div class="actions">
           <button class="button" id="recentre" type="button">Recentre hand<kbd>C</kbd></button>
+          <button class="button" id="calibrate" type="button" hidden>Recalibrate glove<kbd>G</kbd></button>
           <button class="button" id="throwGripper" type="button">Throw at gripper<kbd>T</kbd></button>
           <button class="button" id="throwForearm" type="button">Throw at forearm<kbd>F</kbd></button>
         </div>
@@ -150,7 +210,7 @@
 
       <section class="brain" id="brainCard" hidden>
         <div class="brain-head"><span class="label">Fly looming circuit</span><span class="label" id="brainNote"></span></div>
-        <canvas id="brain" width="800" height="500" role="img" aria-label="Neurons of the fly's looming circuit, lighting up as objects approach"></canvas>
+        <div class="brain-box" id="brainBox"><canvas id="brain" role="img" aria-label="Neurons of the fly's looming circuit, lighting up as objects approach"></canvas></div>
         <div class="legend label"><span>Left eye</span><span>Descending neurons, to the body</span><span>Right eye</span></div>
       </section>
 
@@ -162,9 +222,10 @@
         </div>
         <div class="label mode-note" id="modeNote" aria-live="polite"></div>
         <table id="scores">
-          <thead><tr class="label"><th>Fly reflex</th><th>Thrown</th><th>Hit the arm</th><th class="carry">Load drops</th></tr></thead>
+          <thead><tr class="label"><th>Fly reflex</th><th>Balls that hit</th><th>Load drops</th></tr></thead>
           <tbody></tbody>
         </table>
+        <p class="score-hint" id="scoreHint" aria-live="polite"></p>
       </section>
     </aside>
   </main>
@@ -175,10 +236,11 @@ const $ = id => document.getElementById(id);
 const MODES = [...document.querySelectorAll("[data-mode]")].map(b => b.dataset.mode);
 const MODE_NAMES = { none: "Off", "eye-geometric": "Geometry baseline", "eye-fly": "On", continuous: "Geometry, exact state",
                      spectral: "Fly circuit, exact state", handwritten: "Single jump", brain: "Fly classifier" };
-let latest = null;
+let latest = null, wasDodging = false;
 
 // ---- who is in control
 function why(s) {
+  if (s.glove === "calibrating") return "The arm holds still while the glove is calibrated.";
   if (s.glove === "waiting") return "Waiting for the glove. Plug it in and hold your hand out; the arm will follow from where it is.";
   const steadying = s.carrying && (s.drive.steady || 0) > 0.15;
   if (s.control === "steady") return "Smoothing the hand's movement and leaning the tray, so the load stays on.";
@@ -193,7 +255,17 @@ function drawStatus(s) {
   $("artFly").classList.toggle("on", reflex);
   $("artGlove").classList.toggle("on", !reflex);
   $("why").textContent = why(s);
+  const glove = { live: "Glove connected", waiting: "Looking for the glove", calibrating: "Calibrating the glove",
+                  none: "No glove: scripted operator" }[s.glove];
+  $("glove").textContent = glove || "Glove"; $("glove").className = `glove ${s.glove}`;
   $("gain").style.width = `${Math.max(0, Math.min(s.gain, 1)) * 100}%`;
+  // The ring is for dodges, not for the steadying that runs all the while a load is carried.
+  const dodging = reflex && s.control !== "steady", wrap = $("sceneWrap");
+  if (dodging && !wasDodging) {   // restart the flash, even if the last one has not finished
+    wrap.classList.remove("flash"); void wrap.offsetWidth; wrap.classList.add("flash");
+  }
+  wrap.classList.toggle("reflex", dodging);
+  wasDodging = dodging;
 }
 
 // ---- reflex mode and its scores
@@ -209,19 +281,34 @@ function drawScores(s) {
     const on = b.dataset.mode === s.mode;
     b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on));
   });
-  document.querySelectorAll("#scores .carry").forEach(c => c.style.display = s.carrying ? "" : "none");
   // The two switch positions always; any other mode only once balls have been thrown in it.
   const shown = [...MODES, ...Object.keys(s.scores).filter(m => !MODES.includes(m) && (s.scores[m].throws || m === s.mode))];
   $("scores").tBodies[0].innerHTML = shown.map(mode => {
-    const v = s.scores[mode] || { throws: 0, hits: 0, drops: 0 };
-    return `<tr class="${mode === s.mode ? "on" : ""}"><td>${MODE_NAMES[mode] || mode}</td><td>${v.throws}</td>` +
-           `<td class="big">${v.throws ? v.hits : "–"}</td>` + (s.carrying ? `<td class="big">${v.drops}</td>` : "") + `</tr>`;
+    const v = { throws: 0, hits: 0, drops: 0, carried: 0, ...s.scores[mode] };
+    // A dash until there is something to count: no balls thrown yet, or no load carried yet, in that mode.
+    return `<tr class="${mode === s.mode ? "on" : ""}"><td>${MODE_NAMES[mode] || mode}</td>` +
+           `<td class="big">${v.throws ? `${v.hits}<small>of ${v.throws}</small>` : "–"}</td>` +
+           `<td class="big">${v.carried ? v.drops : "–"}</td></tr>`;
   }).join("");
+  // A score means little alone: once one switch position has results, ask for the other.
+  const tried = m => { const v = s.scores[m]; return !!v && (v.throws > 0 || v.carried > 0); };
+  const [off, on] = MODES;
+  $("scoreHint").textContent = tried(on) && !tried(off) ? "Now switch the reflex off and do the same, to compare."
+                             : tried(off) && !tried(on) ? "Now switch the reflex on and do the same, to compare." : "";
 }
 
 // ---- the neurons
 const canvas = $("brain"), ctx = canvas.getContext("2d");
+const box = $("brainBox"), COLOUR = { detectors: "#ff3b30", descending: "#e9a23b" };   // the eyes' red, the body's amber
 let layout = null, glow = null, level = { detectors: [], descending: [] };
+function fit() {   // keep the drawing as sharp as the screen, whatever size the panel is given
+  const r = box.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+  if (w === canvas.width && h === canvas.height) return;   // setting the size wipes the canvas, so only when it changes
+  canvas.width = w; canvas.height = h;
+  drawBrain();   // this runs after the frame's drawing: draw again, or the panel is blank until the next frame
+}
+new ResizeObserver(fit).observe(box);
 function sprite(colour) {   // one soft dot, drawn once and reused for every neuron
   const c = document.createElement("canvas"); c.width = c.height = 64;
   const g = c.getContext("2d"), fill = g.createRadialGradient(32, 32, 0, 32, 32, 32);
@@ -229,46 +316,56 @@ function sprite(colour) {   // one soft dot, drawn once and reused for every neu
   g.fillStyle = fill; g.fillRect(0, 0, 64, 64);
   return c;
 }
-function place([x, y]) {    // unit box -> canvas, keeping the brain's proportions
-  const pad = 36, w = canvas.width - 2 * pad;
-  return [pad + x * w, canvas.height / 2 + (y - 0.5) * w];
+function span() {          // the width the brain is drawn at: as large as fits (it is about 0.78 as tall as wide)
+  const pad = 0.04 * canvas.width;
+  return Math.min(canvas.width - 2 * pad, (canvas.height - 2 * pad) / 0.78);
+}
+function place([x, y], w) {    // unit box -> canvas, keeping the brain's proportions; its middle is at y = 0.46
+  return [canvas.width / 2 + (x - 0.5) * w, canvas.height / 2 + (y - 0.46) * w];
 }
 function drawBrain() {
   if (!layout) return;
   ctx.globalCompositeOperation = "source-over";
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#2c2c2c";
-  for (const p of layout.rest) { const [x, y] = place(p); ctx.fillRect(x - 1, y - 1, 2, 2); }
+  const w = span(), u = w / 730;   // u: one unit of dot size, so the dots grow with the panel
+  ctx.fillStyle = "#505050";
+  const d = Math.max(1.5, 2.4 * u);
+  for (const p of layout.rest) { const [x, y] = place(p, w); ctx.fillRect(x - d / 2, y - d / 2, d, d); }
+  const breath = 0.5 + 0.5 * Math.sin(performance.now() / 1600);   // every neuron together: a resting glow, not activity
   let active = 0;
   for (const group of ["detectors", "descending"]) {
     const target = latest && latest.neurons ? latest.neurons[group] : [];
     ctx.globalCompositeOperation = "source-over";
-    ctx.fillStyle = "#5a5a5a";
-    layout[group].forEach(p => { const [x, y] = place(p); ctx.beginPath(); ctx.arc(x, y, 2.2, 0, 6.3); ctx.fill(); });
+    ctx.fillStyle = "#8e8e8e";
+    layout[group].forEach(p => { const [x, y] = place(p, w); ctx.beginPath(); ctx.arc(x, y, 2.6 * u, 0, 6.3); ctx.fill(); });
     ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = 0.05 + 0.05 * breath;
+    layout[group].forEach(p => { const [x, y] = place(p, w), size = 16 * u; ctx.drawImage(glow.rest, x - size / 2, y - size / 2, size, size); });
     layout[group].forEach((p, i) => {
       const want = (target[i] || 0) / 99, now = level[group][i] || 0;
       const a = level[group][i] = want > now ? want : now * 0.9;   // light at once, fade over a few frames
       if (a < 0.03) return;
       active++;
-      const [x, y] = place(p), size = 7 + 15 * a;      // small enough that a dense cluster keeps its colour
-      ctx.globalAlpha = 0.15 + 0.6 * a;
-      ctx.drawImage(glow, x - size / 2, y - size / 2, size, size);
+      const [x, y] = place(p, w), size = (10 + 22 * a) * u;      // small enough that a dense cluster keeps its colour
+      ctx.globalAlpha = 0.25 + 0.7 * a;
+      ctx.drawImage(glow[group], x - size / 2, y - size / 2, size, size);
     });
     ctx.globalAlpha = 1;
   }
-  $("brainNote").textContent = active ? `${active} active` : "quiet";
+  $("brainNote").textContent = active ? `${active} neurons firing` : "watching out";
+  $("brainNote").classList.toggle("firing", active > 0);
+  box.classList.toggle("firing", active > 0);
 }
 fetch("/layout").then(r => r.json()).then(l => {
   if (!l.detectors) return;
-  glow = sprite("#ffffff");
-  layout = l; $("brainCard").hidden = false;
+  glow = { rest: sprite("#ffffff"), detectors: sprite(COLOUR.detectors), descending: sprite(COLOUR.descending) };
+  layout = l; $("brainCard").hidden = false; fit();
 }).catch(() => {});
 
 // ---- the 3D view and throwing
 const VIEWER_PORT = __VIEWER_PORT__;
 if (VIEWER_PORT) $("scene").src = `http://${location.hostname}:${VIEWER_PORT}/`;
-else $("scene").style.display = "none";
+else $("sceneWrap").style.display = "none";
 function throwBall(aim) {
   fetch(`/throw?aim=${encodeURIComponent(aim)}`, { method: "POST" })
     .then(r => { $("modeNote").textContent = r.ok ? "" : "Throw refused"; })
@@ -289,9 +386,42 @@ addEventListener("keydown", e => {
   else if (key === "3") setMode("eye-fly");
 });
 
+// ---- the glove calibration
+// The server runs it; the page shows each instruction and stands in for the terminal's Enter.
+let calibDismissed = null;   // the id of the finished calibration whose result was closed, so it is not shown again
+function calibrate(step) {
+  fetch(`/calibrate?step=${step}`, { method: "POST" })
+    .catch(() => { $("modeNote").textContent = "The teleop program is not running"; });
+}
+function calibRunning() { return !!(latest && latest.calibration && latest.calibration.result === null); }
+function drawCalibration(s) {
+  $("calibrate").hidden = s.glove === "none" || s.glove === undefined;
+  const c = s.calibration;
+  const finished = c && c.result !== null;
+  const shown = !!c && !(finished && calibDismissed === c.id);
+  $("calib").hidden = !shown;
+  if (!shown) return;
+  $("calibSay").textContent = c.say;
+  $("calibDetail").textContent = c.waiting ? "Click I'm there, or press Enter, once your hand is in place." : c.detail;
+  $("calibReady").hidden = !c.waiting;
+  $("calibCancel").hidden = finished;
+  $("calibClose").hidden = !finished;
+}
+$("calibrate").addEventListener("click", () => calibrate("start"));
+$("calibReady").addEventListener("click", () => calibrate("ready"));
+$("calibCancel").addEventListener("click", () => calibrate("cancel"));
+$("calibClose").addEventListener("click", () => { calibDismissed = latest.calibration.id; $("calib").hidden = true; });
+addEventListener("keydown", e => {
+  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === "Enter" && calibRunning()) { e.preventDefault(); calibrate("ready"); }   // not also a click on a focused button
+  else if (e.key === "Escape" && calibRunning()) calibrate("cancel");
+  else if (e.key === "Escape" && !$("calib").hidden) $("calibClose").click();
+  else if (e.key.toLowerCase() === "g" && !$("calibrate").hidden && !calibRunning()) calibrate("start");
+});
+
 // ---- the live stream
 const stream = new EventSource("/events");
-stream.onmessage = e => { latest = JSON.parse(e.data); drawStatus(latest); drawScores(latest); };
+stream.onmessage = e => { latest = JSON.parse(e.data); drawStatus(latest); drawScores(latest); drawCalibration(latest); };
 (function frame() { drawBrain(); requestAnimationFrame(frame); })();
 </script>
 </body>

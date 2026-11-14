@@ -53,6 +53,15 @@ class LiveViewTest(unittest.TestCase):
             self.post("/mode?reflex=magic")
         self.assertEqual(caught.exception.code, 400)
 
+    def test_calibration_steps_queue_in_order_and_bad_steps_are_rejected(self) -> None:
+        for step in ("start", "ready", "cancel"):
+            self.assertEqual(self.post(f"/calibrate?step={step}").status, 204)
+        self.assertEqual(self.view.take_calibration(), ["start", "ready", "cancel"])
+        self.assertEqual(self.view.take_calibration(), [])
+        with self.assertRaises(HTTPError) as caught:
+            self.post("/calibrate?step=skip")
+        self.assertEqual(caught.exception.code, 400)
+
     def test_recentre_is_taken_once(self) -> None:
         self.assertFalse(self.view.take_recentre())
         self.assertEqual(self.post("/recentre").status, 204)
