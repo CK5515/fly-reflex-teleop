@@ -18,6 +18,7 @@ PAGE = Path(__file__).with_name("index.html")
 HISTORY = 400  # snapshots replayed to a page that connects late (20 s at 20 Hz)
 AIMS = ("gripper", "forearm")
 MODES = ("none", "continuous", "spectral", "eye-geometric", "eye-fly")
+CALIBRATION_STEPS = ("start", "ready", "cancel")   # begin the glove calibration; hand is in place; stop it
 
 
 class LiveView:
@@ -28,6 +29,7 @@ class LiveView:
         self._throws_lock = threading.Lock()
         self._mode: str | None = None
         self._recentre = False
+        self._calibration: list[str] = []
         self._history: deque[tuple[int, str]] = deque(maxlen=HISTORY)
         self._seq = 0
         self._changed = threading.Condition()
@@ -76,6 +78,15 @@ class LiveView:
                     view._recentre = True
                     self.send_response(204)
                     self.end_headers()
+                elif url.path == "/calibrate":
+                    step = parse_qs(url.query).get("step", [""])[0]
+                    if step not in CALIBRATION_STEPS:
+                        self.send_error(400, "step must be one of " + ", ".join(CALIBRATION_STEPS))
+                    else:
+                        with view._throws_lock:
+                            view._calibration.append(step)
+                        self.send_response(204)
+                        self.end_headers()
                 elif url.path != "/throw":
                     self.send_error(404)
                 elif aim not in AIMS:
@@ -106,6 +117,12 @@ class LiveView:
         """Whether the page asked, since the last call, for the hand's current position to count as home."""
         asked, self._recentre = self._recentre, False
         return asked
+
+    def take_calibration(self) -> list[str]:
+        """Calibration steps asked for from the page since the last call ("start", "ready", "cancel"), oldest first."""
+        with self._throws_lock:
+            steps, self._calibration = self._calibration, []
+        return steps
 
     def close(self) -> None:
         self._server.shutdown()

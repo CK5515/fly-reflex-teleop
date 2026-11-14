@@ -6,13 +6,16 @@ This asks for four short movements and works out the two rotations from them:
 
     python -m mocap.calibrate [left|right]
 
-Sit or stand the way you will when operating, facing the screen. There is no countdown: each step
-waits until you have made the movement and held still, and shows how far you have moved. The result is saved to data/glove_calibration.json and used by
+Sit or stand the way you will when operating, facing the screen. You press Enter (with the other
+hand) once your hand is in the starting pose; after that there is no countdown: each step waits until
+you have made the movement and held still, and shows how far you have moved. The result is saved to data/glove_calibration.json and used by
 `run_teleop.py --source glove`.
 """
 
 import json
+import os
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -59,6 +62,11 @@ def solve(rest, forward, left, up, rest_quat, tilted_quat) -> dict:
                       "tilt_deg": round(float(np.degrees(angle)), 1), "tilt_axis_level": round(level, 3)}}
 
 
+def console(text: str, detail: bool = False) -> None:
+    """How the steps are shown at the terminal: each instruction after a blank line, details indented under it."""
+    print(f"  {text}" if detail else f"\n{text}", flush=True)
+
+
 def load_calibration() -> dict | None:
     if not SAVED.exists():
         return None
@@ -66,11 +74,11 @@ def load_calibration() -> dict | None:
     return {"frame": np.array(saved["frame"]), "turn_frame": np.array(saved["turn_frame"])}
 
 
-def wait_for(glove, instruction: str, done, progress, give_up: float = 40.0) -> tuple[np.ndarray, np.ndarray] | None:
+def wait_for(glove, instruction: str, done, progress, give_up: float = 40.0, say=console) -> tuple[np.ndarray, np.ndarray] | None:
     """Say what to do, then wait (no countdown) until `done(pos, quat)` holds and the hand has been
     still for STILL seconds. Returns the hand's average position and orientation while still, or None
     if that never happened."""
-    print(f"\n{instruction}", flush=True)
+    say(instruction)
     recent: list[np.ndarray] = []
     started = said = time.monotonic()
     while time.monotonic() - started < give_up:
@@ -86,21 +94,26 @@ def wait_for(glove, instruction: str, done, progress, give_up: float = 40.0) -> 
                  and np.abs(window[:, 4:] - window[0, 4:]).max() < 0.05)
         if done(pose.pos, pose.quat) and still:
             quat = window[:, 4:].mean(0)
-            print("  got it", flush=True)
+            say("got it", detail=True)
             return window[:, 1:4].mean(0), quat / np.linalg.norm(quat)
         if now - said > 0.5:
             said = now
-            print(f"  {progress(pose.pos, pose.quat)}", flush=True)
+            say(progress(pose.pos, pose.quat), detail=True)
     return None
 
 
-def still_hand(glove, instruction: str):
-    return wait_for(glove, instruction, lambda pos, quat: True, lambda pos, quat: "waiting for your hand to be still")
+def still_hand(glove, instruction: str, say=console, ready=input):
+    """The starting pose. Waits for Enter (`ready`) first: otherwise the hand, already still wherever it
+    happened to be (on the desk, or still pushed out from the last step), would be taken as the start at once."""
+    say(instruction)
+    ready("  Press Enter with your other hand when you are there. ")
+    return wait_for(glove, "Keep still.", lambda pos, quat: True, lambda pos, quat: "waiting for your hand to be still", say=say)
 
 
 def check(glove, calibration: dict) -> bool:
     """A ten-second test of a saved calibration: push the hand forward and see that it reads as forward."""
-    rest = still_hand(glove, "Hold your hand out comfortably, palm down, fingers pointing at the screen. Keep still.")
+    print("\nChecking the saved calibration.")
+    rest = still_hand(glove, "Hold your hand out comfortably, palm down, fingers pointing at the screen.")
     if rest is None:
         return False
     far = lambda pos, quat: np.linalg.norm(pos - rest[0]) > 0.12
@@ -114,10 +127,16 @@ def check(glove, calibration: dict) -> bool:
     return forward > 0.85
 
 
-def calibrate(glove) -> bool:
-    """The full routine. Saves and returns True if the movements were square enough."""
-    rest = still_hand(glove, "Hold your hand out comfortably, palm down, fingers pointing at the screen. Keep still.")
+def calibrate(glove, say=console, ready=input) -> bool:
+    """The full routine. Saves and returns True if the movements were square enough.
+
+    `say(text, detail=False)` shows an instruction, or with `detail` how the current step is going, and
+    `ready(prompt)` returns once the hand is in the starting pose; the live page passes its own (see
+    PageCalibration). Either may raise to abandon the routine."""
+    gave_up = "Gave up waiting for that step: nothing saved."
+    rest = still_hand(glove, "Bring your hand back and hold it out comfortably, palm down, fingers pointing at the screen.", say, ready)
     if rest is None:
+        say(gave_up)
         return False
     rest, rest_quat = rest
     far = lambda pos, quat: np.linalg.norm(pos - rest) > MOVE
@@ -127,30 +146,94 @@ def calibrate(glove) -> bool:
     back = "Back to where you started, and hold still."
     steps = []
     for name in ("FORWARD, toward the screen,", "to your LEFT,", "UP,"):
-        there = wait_for(glove, f"Move your hand {name} and hold it there.", far, moved)
-        home = wait_for(glove, back, near, away)
+        there = wait_for(glove, f"Move your hand {name} and hold it there.", far, moved, say=say)
+        home = there and wait_for(glove, back, near, away, say=say)
         if there is None or home is None:
+            say(gave_up)
             return False
         steps.append(there[0])
     rest2, rest_quat = home
     tipped = lambda pos, quat: rotation_between(rest_quat, quat)[1] > np.radians(TILT)
     tilt = lambda pos, quat: f"tipped {np.degrees(rotation_between(rest_quat, quat)[1]):3.0f} degrees (need {TILT}, then hold still)"
-    tilted = wait_for(glove, "Keeping your arm where it is, TIP YOUR FINGERS DOWN at the wrist, and hold.", tipped, tilt)
+    tilted = wait_for(glove, "Keeping your arm where it is, TIP YOUR FINGERS DOWN at the wrist, and hold.", tipped, tilt, say=say)
     if tilted is None:
+        say(gave_up)
         return False
 
     result = solve((rest + rest2) / 2, *steps, rest_quat, tilted[1])
     report = result["check"]
-    print(f"\nmovements measured: forward {report['movement_cm'][0]} cm, left {report['movement_cm'][1]} cm, up {report['movement_cm'][2]} cm")
-    print(f"how far the three movements were from square: {report['movements_off_square']} (0 is perfect, 0.35 is the limit)")
-    print(f"finger tilt measured: {report['tilt_deg']} degrees, axis {report['tilt_axis_level']:.2f} level (1 is perfect, 0.8 is the limit)")
+    measured = (f"movements measured: forward {report['movement_cm'][0]} cm, left {report['movement_cm'][1]} cm, "
+                f"up {report['movement_cm'][2]} cm; {report['movements_off_square']} from square (0 is perfect, 0.35 is the limit); "
+                f"finger tilt {report['tilt_deg']} degrees, axis {report['tilt_axis_level']:.2f} level (1 is perfect, 0.8 is the limit)")
     if report["movements_off_square"] > 0.35 or report["tilt_axis_level"] < 0.8:
-        print("NOT SAVED: the movements were not square enough. Move straight along each direction.")
+        say("NOT SAVED: the movements were not square enough. Move straight along each direction.")
+        say(measured, detail=True)
         return False
     SAVED.parent.mkdir(parents=True, exist_ok=True)
     SAVED.write_text(json.dumps(result, indent=1))
-    print(f"saved {SAVED}")
+    say(f"Saved {os.path.relpath(SAVED)}.")
+    say(measured, detail=True)
     return True
+
+
+class Cancelled(Exception):
+    pass
+
+
+class PageCalibration:
+    """The full calibration, started from the live page and run in a thread of its own so the
+    simulation keeps going. The page shows `snapshot()` and stands in for the terminal: its
+    "I'm there" button (`ready()`) for Enter, and its Cancel button (`cancel()`) for Ctrl+C."""
+
+    def __init__(self, glove):
+        self._lock = threading.Lock()
+        self._go, self._stop = threading.Event(), threading.Event()
+        # result: None while running, then "saved", "failed" or "cancelled"
+        self._state = {"id": time.time(), "say": "Starting.", "detail": "", "waiting": False, "result": None}
+        threading.Thread(target=self._run, args=(glove,), daemon=True).start()
+
+    @property
+    def running(self) -> bool:
+        return self.snapshot()["result"] is None
+
+    def snapshot(self) -> dict:
+        with self._lock:
+            return dict(self._state)
+
+    def ready(self) -> None:
+        if self.snapshot()["waiting"]:   # a press at any other moment means nothing
+            self._go.set()
+
+    def cancel(self) -> None:
+        self._stop.set()
+
+    def _set(self, **changes) -> None:
+        with self._lock:
+            self._state.update(changes)
+
+    def _say(self, text: str, detail: bool = False) -> None:
+        if self._stop.is_set():
+            raise Cancelled
+        self._set(**({"detail": text} if detail else {"say": text, "detail": ""}))
+
+    def _ready(self, prompt: str) -> None:
+        self._go.clear()
+        self._set(waiting=True)
+        while not self._go.wait(0.1):
+            if self._stop.is_set():
+                raise Cancelled
+        self._set(waiting=False)
+
+    def _run(self, glove) -> None:
+        try:
+            result = "saved" if calibrate(glove, say=self._say, ready=self._ready) else "failed"
+        except Cancelled:
+            result = "cancelled"
+            self._set(say="Calibration cancelled: the previous one is still in use.", detail="")
+        except Exception as error:   # report it on the page rather than lose it in a thread
+            result = "failed"
+            self._set(say=f"Calibration stopped: {error}", detail="")
+        self._set(waiting=False, result=result)
 
 
 def main() -> None:

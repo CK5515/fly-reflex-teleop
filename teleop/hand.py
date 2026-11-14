@@ -61,11 +61,15 @@ class Retarget:
         self.home_pos = np.array(home_pos, dtype=float)
         self.home_quat = np.array(home_quat, dtype=float)
         self.scale = scale
+        self.set_frames(frame, turn_frame)
+        self.ref: HandPose | None = None
+
+    def set_frames(self, frame: np.ndarray | None, turn_frame: np.ndarray | None) -> None:
+        """Use new position and orientation axes, as from a fresh calibration."""
         self.frame = np.eye(3) if frame is None else np.asarray(frame, dtype=float)
         turn = self.frame if turn_frame is None else np.asarray(turn_frame, dtype=float)
         self.turn_quat = np.zeros(4)
         mujoco.mju_mat2Quat(self.turn_quat, turn.flatten())
-        self.ref: HandPose | None = None
 
     def recalibrate(self) -> None:
         self.ref = None

@@ -25,6 +25,7 @@ LOAD_PARKED = np.array([3.0, 1.0, 0.03])   # where the loose ball waits when no 
 # Collision groups. The robot's own parts are in group 1. A paddle that can be picked up is in group 2
 # only, so it never collides with the hand that holds it; everything else is in both.
 THINGS = dict(contype=3, conaffinity=3)
+LOOKS = dict(contype=0, conaffinity=0)   # drawn only: touches nothing
 PADDLE = dict(contype=2, conaffinity=2)
 PEDESTAL_TOP = np.array([0.50, 0.44, 0.29])   # where the paddle's plate rests until it is picked up
 BLOCK_HALF = 0.0225       # wooden blocks are 4.5 cm cubes
@@ -35,6 +36,7 @@ CARRY_GRIP = 255.0 * HANDLE_HALF_WIDTH / 0.04   # gripper command that brings th
 BOX = mujoco.mjtGeom.mjGEOM_BOX
 SPHERE = mujoco.mjtGeom.mjGEOM_SPHERE
 PLANE = mujoco.mjtGeom.mjGEOM_PLANE
+HIDDEN = [0, 0, 0, 0]   # reference points are for the controller, not the viewer: by default they draw as grey balls
 
 
 def ball_names(model: mujoco.MjModel) -> list[str]:
@@ -44,6 +46,20 @@ def ball_names(model: mujoco.MjModel) -> list[str]:
         names.append(f"ball{i}")
         i += 1
     return names
+
+
+def _dress(spec: mujoco.MjSpec) -> None:
+    """Sky, floor and bench materials. Looks only: none of it takes part in the physics."""
+    spec.add_texture(name="sky", type=mujoco.mjtTexture.mjTEXTURE_SKYBOX, builtin=mujoco.mjtBuiltin.mjBUILTIN_GRADIENT,
+                     rgb1=[0.13, 0.16, 0.22], rgb2=[0.02, 0.025, 0.035], width=256, height=1536)
+    spec.add_texture(name="grid", type=mujoco.mjtTexture.mjTEXTURE_2D, builtin=mujoco.mjtBuiltin.mjBUILTIN_CHECKER,
+                     rgb1=[0.15, 0.17, 0.21], rgb2=[0.13, 0.15, 0.19], mark=mujoco.mjtMark.mjMARK_EDGE,
+                     markrgb=[0.26, 0.29, 0.36], width=300, height=300)
+    floor = spec.add_material(name="floor", texrepeat=[4, 4], texuniform=True, reflectance=0.08)
+    floor.textures[mujoco.mjtTextureRole.mjTEXROLE_RGB] = "grid"
+    # A cool mid grey, so the wooden blocks, the pale tray and the yellow ball all stand out against it.
+    spec.add_material(name="benchtop", rgba=[0.40, 0.45, 0.52, 1], specular=0.25, shininess=0.4)
+    spec.add_material(name="steel", rgba=[0.22, 0.23, 0.26, 1], specular=0.6, shininess=0.7)
 
 
 def build_model(load: str | None = None, balls: int = 1, target_marker: bool = False, blocks: int = 0) -> mujoco.MjModel:
@@ -75,17 +91,22 @@ def build_model(load: str | None = None, balls: int = 1, target_marker: bool = F
     world = spec.worldbody
     world.add_light(pos=[0, 0, 2.5])
     world.add_light(pos=[1.0, -1.0, 2.0], dir=[-0.4, 0.4, -1.0])
-    world.add_geom(name="floor", type=PLANE, size=[0, 0, 0.05], rgba=[0.18, 0.2, 0.24, 1], **THINGS)
-    world.add_geom(
-        name="table",
-        type=BOX,
-        pos=[0.55, 0, TABLE_TOP_Z / 2],
-        size=[0.22, 0.35, TABLE_TOP_Z / 2],
-        rgba=[0.55, 0.45, 0.35, 1], **THINGS,
-    )
+    _dress(spec)
+    world.add_geom(name="floor", type=PLANE, size=[0, 0, 0.05], material="floor", **THINGS)
+    # The table the physics sees is a solid block, hidden (group 3, like the arm's own collision
+    # shapes). What is drawn in its place is a bench of the same footprint and height.
+    centre, half = np.array([0.55, 0.0]), np.array([0.22, 0.35])
+    world.add_geom(name="table", type=BOX, pos=[*centre, TABLE_TOP_Z / 2], size=[*half, TABLE_TOP_Z / 2], group=3, **THINGS)
+    top = 0.025   # thickness of the bench top
+    world.add_geom(type=BOX, pos=[*centre, TABLE_TOP_Z - top / 2], size=[*half, top / 2], material="benchtop", **LOOKS)
+    world.add_geom(type=BOX, pos=[*centre, 0.07], size=[*(half - 0.03), 0.006], material="steel", **LOOKS)   # a shelf
+    for x in (-1, 1):
+        for y in (-1, 1):
+            world.add_geom(type=BOX, pos=[*(centre + [x, y] * (half - 0.025)), (TABLE_TOP_Z - top) / 2],
+                           size=[0.018, 0.018, (TABLE_TOP_Z - top) / 2], material="steel", **LOOKS)
 
     # Where the arm grips: between the fingertips.
-    spec.body("hand").add_site(name="grasp", pos=[0, 0, 0.1034], size=[0.005, 0.005, 0.005])
+    spec.body("hand").add_site(name="grasp", pos=[0, 0, 0.1034], size=[0.005, 0.005, 0.005], rgba=HIDDEN)
 
     if blocks:   # wooden blocks to stack, in a row across the table
         for i in range(blocks):
@@ -140,7 +161,7 @@ def build_model(load: str | None = None, balls: int = 1, target_marker: bool = F
             world.add_geom(name="pedestal", type=BOX, pos=[PEDESTAL_TOP[0], PEDESTAL_TOP[1], PEDESTAL_TOP[2] / 2],
                            size=[0.06, 0.06, PEDESTAL_TOP[2] / 2], rgba=[0.3, 0.3, 0.33, 1], **THINGS)
         # The top face is the gripper's -z side (the gripper points down).
-        hand.add_site(name="tray", pos=[TRAY_OFFSET[0], TRAY_OFFSET[1], TRAY_OFFSET[2] - 0.004], size=[0.004, 0.004, 0.004])
+        hand.add_site(name="tray", pos=[TRAY_OFFSET[0], TRAY_OFFSET[1], TRAY_OFFSET[2] - 0.004], size=[0.004, 0.004, 0.004], rgba=HIDDEN)
         ball = world.add_body(name="load", pos=LOAD_PARKED)
         ball.add_freejoint()
         ball.add_geom(name="load", type=SPHERE, size=[LOAD_RADIUS, 0, 0], mass=0.03, rgba=[0.95, 0.75, 0.1, 1],
