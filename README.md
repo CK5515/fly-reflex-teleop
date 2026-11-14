@@ -2,13 +2,11 @@
 
 Junction 2026, Rokoko teleoperation track.
 
-A motion-capture glove tells a robot what the operator does, but nothing tells the operator what the robot feels.
-They cannot feel a load sliding, and cannot react to an object that arrives in half a second.
+A motion-capture glove mirrors to a robot what the operator does, but nothing tells the operator gets no feedback from the robot.
+You cannot feel a load sliding and cannot react to an object that suddenly appears in half a second.
 
-This project puts a reflex layer under the operator. A person steers a simulated robot arm with a Rokoko glove.
-Underneath, the arm keeps what it carries steady and steps out of the way of incoming objects, then hands control
-straight back. The incoming objects are sensed through the fruit fly's looming circuit, taken from the FlyWire
-connectome of *Drosophila*.
+This project puts a "reflex layer" that runs in parallel with the regular operator. A person steers a simulated robot arm with a Rokoko glove.
+Meanwhile, the arm keeps what it carries steady and steps out of the way of incoming objects for a brief moment before handing back control. The incoming objects are sensed through the fruit fly's looming circuit, taken from the FlyWire connectome of *Drosophila*.
 
 ## What you see
 
@@ -19,7 +17,7 @@ connectome of *Drosophila*.
 - **Who is in control**: the glove operator or the fly reflex, with one sentence saying why.
 - **The fly's looming circuit**: 210 looming detectors in the two optic lobes and 245 descending neurons, drawn at
   their positions in the brain, lighting up as objects approach.
-- **A switch** to turn the reflex off and on, and a score for each: balls thrown, balls that hit the arm, loads dropped.
+- **A switch** to turn the reflex off and on... and a score for each: balls thrown, balls that hit the arm, loads dropped.
 
 Press `T` to throw a ball at the arm, `1` and `3` to switch the reflex off and on, `C` to recentre on the hand.
 
@@ -32,16 +30,16 @@ objects in the air ──► eye ──► fly circuit ──► reflex ──�
 ```
 
 - **Eye.** Each ball is reduced to what an eye can measure: its bearing and its apparent size, 60 times a second,
-  one frame late, with noise. No distances, no velocities, no 3D tracking.
+  one frame late, with noise. (No distances, velocities or 3D tracking)
 - **Fly circuit.** A ball excites the looming detectors (LPLC2) looking its way, in proportion to how soon it will
-  arrive: apparent size divided by its growth rate. Band filters on the graph Laplacians of the circuit's wiring,
+  arrive... apparent size divided by its growth rate. Band filters on the graph Laplacians of the circuit's wiring,
   one per neurotransmitter, carry that activity to the descending neurons. A linear readout of those neurons gives
   the danger of staying put and of stepping in each of 16 directions.
 - **Reflex.** The arm eases toward the safest direction along a smooth path. While a load is carried, the tray is
-  held level, follows the hand along an acceleration-limited path, and leans into every movement so the load stays on.
+  held level, follows the hand along an acceleration-limited path and leans into every movement so the load stays on.
 
-After fitting, the fly circuit is two small matrices, about 55,000 numbers, and one decision takes about a
-millisecond on a laptop CPU.
+After fitting the fly circuit is two small matrices... ~ 55,000 numbers. This makes one decision take about a
+millisecond on a laptop CPU. Perfect for edge AI.
 
 ## Results
 
