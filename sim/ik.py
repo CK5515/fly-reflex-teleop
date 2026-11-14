@@ -6,6 +6,8 @@ import numpy as np
 from sim.scene import HOME_ARM, control_site
 
 ARM_DOFS = 7
+SHOULDER = np.array([0.0, 0.0, 0.333])
+REACH = 0.80   # metres from the shoulder that the steered point may be asked to go
 
 
 class ArmIK:
@@ -24,6 +26,8 @@ class ArmIK:
         self.q = HOME_ARM.copy()
         self.lower = model.jnt_range[:ARM_DOFS, 0]
         self.upper = model.jnt_range[:ARM_DOFS, 1]
+        self._stuck = 0
+        self.restarts = 0   # times the solver had to start again from the home posture
         self._jacp = np.zeros((3, model.nv))
         self._jacr = np.zeros((3, model.nv))
 
@@ -31,6 +35,25 @@ class ArmIK:
         self.q = np.array(q[:ARM_DOFS], dtype=float)
 
     def step(self, target_pos: np.ndarray, target_quat: np.ndarray) -> np.ndarray:
+        # Keep the target within reach: asking for more locks the elbow straight.
+        from_shoulder = np.asarray(target_pos, dtype=float) - SHOULDER
+        distance = np.linalg.norm(from_shoulder)
+        if distance > REACH:
+            target_pos = SHOULDER + from_shoulder * (REACH / distance)
+        miss = self._update(target_pos, target_quat, self.max_step)
+        # Small steps can get stuck against a joint limit. If the solution has been well off the
+        # target for a while, solve again from the home posture and continue from there.
+        self._stuck = self._stuck + 1 if miss > 0.10 else 0
+        if self._stuck > 100:
+            self.q = HOME_ARM.copy()
+            for _ in range(80):
+                self._update(target_pos, target_quat, 0.1)
+            self._stuck = 0
+            self.restarts += 1
+        return self.q
+
+    def _update(self, target_pos: np.ndarray, target_quat: np.ndarray, max_step: float) -> float:
+        """One damped least-squares step. Returns how far the solution was from the target, metres."""
         d = self.scratch
         d.qpos[:ARM_DOFS] = self.q
         mujoco.mj_kinematics(self.model, d)
@@ -55,7 +78,7 @@ class ArmIK:
         dq += null @ (0.05 * (HOME_ARM - self.q))
 
         biggest = np.abs(dq).max()
-        if biggest > self.max_step:
-            dq *= self.max_step / biggest
+        if biggest > max_step:
+            dq *= max_step / biggest
         self.q = np.clip(self.q + dq, self.lower, self.upper)
-        return self.q
+        return float(np.linalg.norm(error[:3]))

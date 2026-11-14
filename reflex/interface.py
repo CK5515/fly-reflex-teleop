@@ -20,7 +20,11 @@ class SceneEvents:
     object_vel: np.ndarray   # its velocity minus the gripper's, m/s
     object_radius: float
     contact_force: float     # newtons pressing on the arm from the thrown object (0 = none)
-    gripper_acc: np.ndarray = field(default_factory=lambda: np.zeros(3))  # the gripper's acceleration, m/s^2
+    # Every thrown object, as (position, velocity) relative to the gripper. `object_pos` and
+    # `object_vel` above are the most urgent of these.
+    objects: list[tuple[np.ndarray, np.ndarray]] = field(default_factory=list)
+    touching: frozenset[int] = frozenset()   # which thrown objects are touching the arm right now
+    target_acc: np.ndarray = field(default_factory=lambda: np.zeros(3))  # acceleration the operator is asking for, m/s^2
     load_on: bool = False    # something loose is being carried and is still on the tray
     load_pos: np.ndarray = field(default_factory=lambda: np.zeros(2))  # its offset from the tray's centre (x, y), metres
     load_vel: np.ndarray = field(default_factory=lambda: np.zeros(2))  # its velocity over the tray, m/s
