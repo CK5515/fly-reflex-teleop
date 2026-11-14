@@ -121,21 +121,23 @@ def lean(quat: np.ndarray, tilt: np.ndarray) -> np.ndarray:
 class ScriptedHand:
     """A stand-in operator: moves through timed waypoints, looping.
 
-    Waypoints are (seconds, displacement xyz, grip). `wobble` adds an unsteady
-    wrist: it rocks by that many radians, slowly, about both level axes.
+    Waypoints are (seconds, displacement xyz, grip). `loop_from` replays only the
+    waypoints from that time on, once the last one is reached, so an opening move
+    happens once. `wobble` adds an unsteady wrist: it rocks by that many radians,
+    slowly, about both level axes.
     """
 
     def __init__(self, waypoints: list[tuple[float, tuple[float, float, float], float]], loop: bool = True,
-                 wobble: float = 0.0, wobble_from: float = 0.0):
+                 wobble: float = 0.0, wobble_from: float = 0.0, loop_from: float = 0.0):
         self.wobble, self.wobble_from = wobble, wobble_from   # the wrist is steady before `wobble_from` seconds
         self.times = np.array([w[0] for w in waypoints])
         self.points = np.array([w[1] for w in waypoints], dtype=float)
         self.grips = np.array([w[2] for w in waypoints], dtype=float)
-        self.loop = loop
+        self.loop, self.loop_from = loop, loop_from
 
     def latest(self, t: float) -> HandPose:
-        if self.loop:
-            t = t % self.times[-1]
+        if self.loop and t > self.times[-1]:
+            t = self.loop_from + (t - self.loop_from) % (self.times[-1] - self.loop_from)
         pos = np.array([np.interp(t, self.times, self.points[:, i]) for i in range(3)])
         grip = float(np.interp(t, self.times, self.grips))
         quat = np.array([1.0, 0.0, 0.0, 0.0])

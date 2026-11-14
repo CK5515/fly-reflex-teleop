@@ -63,7 +63,7 @@ def waiter_script(wobble: float) -> ScriptedHand:
 
 
 def grab_script(home_pos: np.ndarray, data, model, wobble: float) -> ScriptedHand:
-    """Reach for the paddle's handle, pinch to pick it up, carry it about unsteadily, then let go."""
+    """Reach for the paddle's handle, pinch to pick it up, then carry it about unsteadily for good."""
     hand = model.body("paddle").id
     turn = data.xmat[hand].reshape(3, 3)
     handle = data.xpos[hand] + turn @ [0, 0, 0.1034] - home_pos      # where the fingertips take hold
@@ -74,8 +74,7 @@ def grab_script(home_pos: np.ndarray, data, model, wobble: float) -> ScriptedHan
         (0.0, zero, 0.0), (2.0, tuple(above), 0.0), (3.2, tuple(handle), 0.0), (3.8, tuple(handle), 1.0),
         (5.0, tuple(carry[0]), 1.0), (6.5, tuple(carry[1]), 1.0), (8.0, tuple(carry[2]), 1.0), (9.5, tuple(carry[0]), 1.0),
         (11.0, tuple(carry[1]), 1.0), (12.5, tuple(carry[2]), 1.0), (14.0, tuple(carry[0]), 1.0),
-        (14.5, tuple(carry[0]), 0.0), (16.5, zero, 0.0), (18.0, zero, 0.0),
-    ], wobble=wobble, wobble_from=5.0)
+    ], wobble=wobble, wobble_from=5.0, loop_from=5.0)   # the grip never relaxes, so the paddle is never dropped
 
 
 def main() -> None:
