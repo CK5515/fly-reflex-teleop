@@ -45,13 +45,23 @@ millisecond on a laptop CPU.
 
 ## Results
 
-In simulation, with a scripted operator. One 62-second run per cell so far; `python bench.py` repeats them over seeds.
+In simulation, with a scripted operator. Each cell is the mean over 5 runs of 62 seconds, with the lowest and highest
+run in brackets. "Reflex on" is the fly circuit working from eye-only input. Reproduce with `python bench.py`.
 
-| Situation | Reflex off | Reflex on |
-|---|---|---|
-| Balls thrown at the arm: how many hit, of 20 | 20 | 3 |
-| Unsteady operator carrying a load: drops in a minute | 36 | 0 |
-| Volleys of three balls: how many hit, of 45 | 45 | 18 |
+| Situation | Measure | Reflex off | Reflex on |
+|---|---|---|---|
+| Single balls thrown at a still arm | hit the arm, of 20 | 20 (20–20) | 4.6 (3–6) |
+| Volleys of three balls at a still arm | hit the arm, of 45 | 45 (45–45) | 13.8 (13–15) |
+| Unsteady operator carrying a load, no balls | load drops | 35.8 (30–38) | 0 (0–0) |
+| Unsteady operator carrying a load, single balls | load drops | 32.4 (31–33) | 6.4 (6–8) |
+| | hit the arm, of 20 | 18.2 (18–19) | 13.6 (11–15) |
+
+The ball runs differ in where the balls come from and in the eye's sensor noise. The no-balls carrying runs have
+nothing random in them, so they differ in how unsteady the wrist is (0.10 to 0.30 radians of rocking).
+
+The reflex is strongest at steadying a load and at clearing single objects from rest. It is weakest when both
+happen at once: with the operator moving and a load on the tray, about two balls in three still touch the arm,
+because the dodge is kept gentle enough not to throw the load.
 
 ## Limits
 
