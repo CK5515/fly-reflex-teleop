@@ -6,8 +6,9 @@ This asks for four short movements and works out the two rotations from them:
 
     python -m mocap.calibrate [left|right]
 
-Sit or stand the way you will when operating, facing the screen. There is no countdown: each step
-waits until you have made the movement and held still, and shows how far you have moved. The result is saved to data/glove_calibration.json and used by
+Sit or stand the way you will when operating, facing the screen. You press Enter (with the other
+hand) once your hand is in the starting pose; after that there is no countdown: each step waits until
+you have made the movement and held still, and shows how far you have moved. The result is saved to data/glove_calibration.json and used by
 `run_teleop.py --source glove`.
 """
 
@@ -95,12 +96,17 @@ def wait_for(glove, instruction: str, done, progress, give_up: float = 40.0) -> 
 
 
 def still_hand(glove, instruction: str):
-    return wait_for(glove, instruction, lambda pos, quat: True, lambda pos, quat: "waiting for your hand to be still")
+    """The starting pose. Waits for Enter first: otherwise the hand, already still wherever it happened
+    to be (on the desk, or still pushed out from the last step), would be taken as the start at once."""
+    print(f"\n{instruction}", flush=True)
+    input("  Press Enter with your other hand when you are there. ")
+    return wait_for(glove, "Keep still.", lambda pos, quat: True, lambda pos, quat: "waiting for your hand to be still")
 
 
 def check(glove, calibration: dict) -> bool:
     """A ten-second test of a saved calibration: push the hand forward and see that it reads as forward."""
-    rest = still_hand(glove, "Hold your hand out comfortably, palm down, fingers pointing at the screen. Keep still.")
+    print("\nChecking the saved calibration.")
+    rest = still_hand(glove, "Hold your hand out comfortably, palm down, fingers pointing at the screen.")
     if rest is None:
         return False
     far = lambda pos, quat: np.linalg.norm(pos - rest[0]) > 0.12
@@ -116,7 +122,7 @@ def check(glove, calibration: dict) -> bool:
 
 def calibrate(glove) -> bool:
     """The full routine. Saves and returns True if the movements were square enough."""
-    rest = still_hand(glove, "Hold your hand out comfortably, palm down, fingers pointing at the screen. Keep still.")
+    rest = still_hand(glove, "Bring your hand back and hold it out comfortably, palm down, fingers pointing at the screen.")
     if rest is None:
         return False
     rest, rest_quat = rest
